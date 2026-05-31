@@ -1,6 +1,233 @@
 import { useState, useRef, useEffect } from "react";
 
-// ── 题型配置 ──────────────────────────────────────
+// ══════════════════════════════════════════════════
+//  主页面组件
+// ══════════════════════════════════════════════════
+
+const RESULTS = [
+  { name: "李同学", grade: "初三", before: "58分", after: "91分", duration: "4个月", quote: "第一次觉得数学是讲道理的。" },
+  { name: "陈同学", grade: "初二", before: "67分", after: "88分", duration: "3个月", quote: "老师会把为什么讲清楚，不只告诉我怎么做。" },
+  { name: "王同学", grade: "小六", before: "72分", after: "95分", duration: "5个月", quote: "现在遇到新题也不慌了。" },
+];
+
+const PHILOSOPHY = [
+  { icon: "◎", title: "概念先行", body: "每道题背后都有它的道理。我先让孩子弄懂概念从哪里来、为什么成立，再讲解题步骤。" },
+  { icon: "✕", title: "反对刷题", body: "大量重复练习无法替代真正的理解。一道真正弄懂的例题，远胜二十道机械练习。" },
+  { icon: "→", title: "理解即效率", body: "孩子一旦真正理解了概念，掌握新题型的速度会让你吃惊。理解是最高效的学习方式。" },
+  { icon: "♡", title: "关注心理", body: "不认同\"你不学有的是人学\"的筛选逻辑。会尽量让孩子在轻松的状态下慢慢建立自信。" },
+];
+
+const FAQS = [
+  { q: "适合什么阶段的学生？", a: "主要面向初中生（初一到初三），同时接受小学高年级（四至六年级）的学生。" },
+  { q: "小班课一般几个人？", a: "通常3-6人，确保每个孩子都能得到足够的关注。按程度分班，保证同班孩子的基础相近。" },
+  { q: "你对学生有什么要求？", a: "只有一条：主观上愿意学。我会负责讲清楚、讲耐心，但如果孩子完全没有学习意愿，我们可能不是最合适的组合。" },
+  { q: "会布置大量课后作业吗？", a: "不会。课后练习以精为主，我更看重孩子能否用自己的话解释解题逻辑，而不是完成多少道题。" },
+];
+
+function useFadeIn() {
+  const ref = useRef(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setVisible(true); obs.disconnect(); } }, { threshold: 0.1 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+  return [ref, visible];
+}
+
+function FadeIn({ children, delay = 0 }) {
+  const [ref, visible] = useFadeIn();
+  return (
+    <div ref={ref} style={{ opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(24px)", transition: `opacity 0.7s ease ${delay}s, transform 0.7s ease ${delay}s` }}>
+      {children}
+    </div>
+  );
+}
+
+function HomePage({ onGoTool }) {
+  const [openFaq, setOpenFaq] = useState(null);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const fn = () => setScrolled(window.scrollY > 40);
+    window.addEventListener("scroll", fn);
+    return () => window.removeEventListener("scroll", fn);
+  }, []);
+
+  const SL = ({ id, children }) => (
+    <a href={"#" + id} style={{ fontSize: 12, color: "#8a7a5a", textDecoration: "none", letterSpacing: "0.8px", transition: "color 0.2s" }}
+      onMouseEnter={e => e.target.style.color = "#1a1410"}
+      onMouseLeave={e => e.target.style.color = "#8a7a5a"}>{children}</a>
+  );
+
+  return (
+    <div style={{ fontFamily: "'Noto Sans SC','PingFang SC',sans-serif", color: "#1e1a14", background: "#fff" }}>
+      {/* Nav */}
+      <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: scrolled ? "rgba(252,251,248,0.95)" : "transparent", backdropFilter: scrolled ? "blur(12px)" : "none", borderBottom: scrolled ? "0.5px solid #ede8df" : "none", transition: "all 0.3s", padding: "0 5%", display: "flex", alignItems: "center", justifyContent: "space-between", height: 58 }}>
+        <div style={{ fontSize: 15, fontWeight: 500, color: "#1a1410" }}>信望数理 <span style={{ color: "#c8860a" }}>·</span> 彭老师</div>
+        <div style={{ display: "flex", gap: 28, alignItems: "center" }}>
+          <SL id="理念">理念</SL>
+          <SL id="成果">成果</SL>
+          <SL id="工具">工具</SL>
+          <SL id="常见问题">常见问题</SL>
+          <SL id="联系">联系</SL>
+        </div>
+      </nav>
+
+      {/* Hero */}
+      <section style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", padding: "120px 8% 80px", background: "#fffdf8", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", right: "6%", top: "50%", transform: "translateY(-50%)", fontSize: 200, color: "#f0e8d0", fontWeight: 900, lineHeight: 1, userSelect: "none", pointerEvents: "none", fontFamily: "serif" }}>数</div>
+        <div style={{ maxWidth: 600, position: "relative" }}>
+          <div style={{ display: "inline-block", fontSize: 11, letterSpacing: "3px", color: "#c8860a", background: "#fef3dc", padding: "4px 14px", borderRadius: 20, marginBottom: 24, fontWeight: 500 }}>初中 · 小学数学 · 小班课</div>
+          <h1 style={{ fontSize: "clamp(34px,5vw,54px)", fontWeight: 500, lineHeight: 1.3, color: "#1a1410", margin: "0 0 10px", fontFamily: "serif" }}>理解先于解题</h1>
+          <h1 style={{ fontSize: "clamp(34px,5vw,54px)", fontWeight: 500, lineHeight: 1.3, color: "#c8860a", margin: "0 0 22px", fontFamily: "serif" }}>思维重于练习</h1>
+          <p style={{ fontSize: 16, color: "#6a5a3a", lineHeight: 1.95, margin: "0 0 36px", maxWidth: 460 }}>数学不是做题量的竞赛。<br />当孩子真正读懂一个概念，<br />他面对新题型时的从容，会让你看到不同。</p>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <a href="#联系" style={{ background: "#1a1410", color: "#fef3dc", padding: "13px 30px", borderRadius: 8, fontSize: 14, fontWeight: 500, textDecoration: "none", letterSpacing: "1px" }}>预约体验课</a>
+            <button onClick={onGoTool} style={{ background: "transparent", color: "#1a1410", padding: "13px 30px", borderRadius: 8, fontSize: 14, fontWeight: 500, border: "1.5px solid #c8a050", cursor: "pointer", letterSpacing: "1px" }}>试用 AI 作业检查</button>
+          </div>
+        </div>
+        <div style={{ position: "absolute", bottom: 48, left: "8%", right: "8%", display: "flex", gap: 48, borderTop: "0.5px solid #e8dcc8", paddingTop: 28, flexWrap: "wrap" }}>
+          {[["3+", "年教学经验"], ["50+", "服务学生"], ["平均↑22分", "中考提分"]].map(([n, l]) => (
+            <div key={l}><div style={{ fontSize: 26, fontWeight: 500, color: "#1a1410", fontFamily: "serif" }}>{n}</div><div style={{ fontSize: 11, color: "#8a7a5a", letterSpacing: "1px", marginTop: 2 }}>{l}</div></div>
+          ))}
+        </div>
+      </section>
+
+      {/* Philosophy */}
+      <section id="理念" style={{ padding: "80px 8%", background: "#1a1410" }}>
+        <FadeIn>
+          <div style={{ fontSize: 10, letterSpacing: "4px", color: "#c8860a", marginBottom: 12, fontWeight: 500 }}>TEACHING PHILOSOPHY</div>
+          <div style={{ fontSize: 26, fontWeight: 500, color: "#f5ead0", marginBottom: 40, fontFamily: "serif" }}>教学理念</div>
+        </FadeIn>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 2 }}>
+          {PHILOSOPHY.map((p, i) => (
+            <FadeIn key={p.title} delay={i * 0.1}>
+              <div style={{ padding: "32px 24px", background: i % 2 === 0 ? "#211a12" : "#1e1812", transition: "background 0.2s", cursor: "default" }}
+                onMouseEnter={e => e.currentTarget.style.background = "#b87820"}
+                onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? "#211a12" : "#1e1812"}>
+                <div style={{ fontSize: 22, color: "#c8a050", marginBottom: 14, fontFamily: "monospace" }}>{p.icon}</div>
+                <div style={{ fontSize: 15, fontWeight: 500, color: "#f5ead0", marginBottom: 10 }}>{p.title}</div>
+                <div style={{ fontSize: 13, color: "#b0a080", lineHeight: 1.85 }}>{p.body}</div>
+              </div>
+            </FadeIn>
+          ))}
+        </div>
+      </section>
+
+      {/* Results */}
+      <section id="成果" style={{ padding: "80px 8%", background: "#fffdf8" }}>
+        <FadeIn>
+          <div style={{ fontSize: 10, letterSpacing: "4px", color: "#c8860a", marginBottom: 12, fontWeight: 500 }}>STUDENT RESULTS</div>
+          <div style={{ fontSize: 26, fontWeight: 500, color: "#1a1410", marginBottom: 40, fontFamily: "serif" }}>学生成果</div>
+        </FadeIn>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 16, marginBottom: 20 }}>
+          {RESULTS.map((r, i) => (
+            <FadeIn key={r.name} delay={i * 0.1}>
+              <div style={{ border: "0.5px solid #ede8df", borderRadius: 12, padding: "24px 20px", background: "#fff", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(90deg,#c8a050,#e8c870)" }} />
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14, alignItems: "flex-start" }}>
+                  <div><div style={{ fontSize: 14, fontWeight: 500, color: "#1a1410" }}>{r.name}</div><div style={{ fontSize: 11, color: "#8a7a5a", marginTop: 2 }}>{r.grade} · {r.duration}</div></div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                    <span style={{ fontSize: 11, color: "#8a7a5a" }}>{r.before}</span>
+                    <span style={{ color: "#c8a050" }}>→</span>
+                    <span style={{ fontSize: 18, fontWeight: 500, color: "#2a7a2a", fontFamily: "monospace" }}>{r.after}</span>
+                  </div>
+                </div>
+                <div style={{ fontSize: 13, color: "#4a3a20", lineHeight: 1.8, fontStyle: "italic", borderLeft: "2px solid #e8c870", paddingLeft: 12 }}>"{r.quote}"</div>
+              </div>
+            </FadeIn>
+          ))}
+        </div>
+        <div style={{ background: "#fef3dc", borderRadius: 10, padding: "16px 22px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, border: "0.5px solid #f0d880", flexWrap: "wrap" }}>
+          <p style={{ fontSize: 12, color: "#7a5a20", lineHeight: 1.7, margin: 0 }}>以上数据来自真实学生，成绩提升因人而异。我不做夸大承诺，但会尽全力帮助每一个愿意学习的孩子。</p>
+          <a href="#联系" style={{ background: "#1a1410", color: "#fef3dc", padding: "10px 20px", borderRadius: 6, fontSize: 12, fontWeight: 500, textDecoration: "none", whiteSpace: "nowrap" }}>预约体验课</a>
+        </div>
+      </section>
+
+      {/* Tool */}
+      <section id="工具" style={{ padding: "80px 8%", background: "#f0ebe0" }}>
+        <FadeIn>
+          <div style={{ fontSize: 10, letterSpacing: "4px", color: "#c8860a", marginBottom: 12, fontWeight: 500 }}>AI TOOL</div>
+          <div style={{ fontSize: 26, fontWeight: 500, color: "#1a1410", marginBottom: 14, fontFamily: "serif" }}>AI 作业检查工具</div>
+          <p style={{ fontSize: 14, color: "#6a5a3a", lineHeight: 1.85, maxWidth: 520, marginBottom: 28 }}>家长拍一张作业照片，AI 自动识别解题步骤，检测跳步、符号错误，并解释原因——不只告诉孩子"错了"，更告诉他"为什么错"。</p>
+        </FadeIn>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12, marginBottom: 20 }}>
+          {[["📷", "拍照上传", "家长直接用手机拍，无需下载app"], ["🔍", "AI识别", "自动识别手写，逐行分析步骤"], ["📋", "解释原因", "不只说"错了"，还解释为什么"], ["📡", "同步后台", "彭老师实时看到所有批改记录"]].map(([icon, title, desc]) => (
+            <div key={title} style={{ background: "#fff", borderRadius: 10, padding: "18px 16px", border: "0.5px solid #e0d4c0" }}>
+              <div style={{ fontSize: 20, marginBottom: 8 }}>{icon}</div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: "#1a1410", marginBottom: 4 }}>{title}</div>
+              <div style={{ fontSize: 11, color: "#8a7a5a", lineHeight: 1.7 }}>{desc}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ background: "#1a1410", borderRadius: 12, padding: "26px 30px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 500, color: "#fef3dc", marginBottom: 5 }}>现在就可以试用</div>
+            <div style={{ fontSize: 12, color: "#a08040", lineHeight: 1.7 }}>无需下载，手机浏览器直接使用<br />支持一元一次方程、因式分解等多种题型</div>
+          </div>
+          <button onClick={onGoTool} style={{ background: "#c8a050", color: "#1a1410", padding: "13px 28px", borderRadius: 6, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>立即体验 →</button>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section id="常见问题" style={{ padding: "80px 8%", background: "#fffdf8" }}>
+        <FadeIn>
+          <div style={{ fontSize: 10, letterSpacing: "4px", color: "#c8860a", marginBottom: 12, fontWeight: 500 }}>FAQ</div>
+          <div style={{ fontSize: 26, fontWeight: 500, color: "#1a1410", marginBottom: 36, fontFamily: "serif" }}>常见问题</div>
+        </FadeIn>
+        <div style={{ maxWidth: 640 }}>
+          {FAQS.map((faq, i) => (
+            <div key={i} style={{ borderBottom: "0.5px solid #ede8df" }}>
+              <button onClick={() => setOpenFaq(openFaq === i ? null : i)} style={{ width: "100%", textAlign: "left", background: "none", border: "none", padding: "18px 0", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                <span style={{ fontSize: 14, fontWeight: 500, color: "#1a1410", lineHeight: 1.5 }}>{faq.q}</span>
+                <span style={{ fontSize: 18, color: "#c8a050", flexShrink: 0, transform: openFaq === i ? "rotate(45deg)" : "rotate(0)", transition: "transform 0.2s" }}>+</span>
+              </button>
+              <div style={{ maxHeight: openFaq === i ? 200 : 0, overflow: "hidden", transition: "max-height 0.3s ease" }}>
+                <div style={{ fontSize: 13, color: "#5a4a30", lineHeight: 1.9, paddingBottom: 18 }}>{faq.a}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Contact */}
+      <section id="联系" style={{ padding: "80px 8%", background: "#1a1410" }}>
+        <div style={{ maxWidth: 560 }}>
+          <FadeIn>
+            <div style={{ fontSize: 10, letterSpacing: "4px", color: "#c8860a", marginBottom: 12, fontWeight: 500 }}>CONTACT</div>
+            <div style={{ fontSize: 26, fontWeight: 500, color: "#f5ead0", marginBottom: 16, fontFamily: "serif" }}>预约体验课</div>
+            <p style={{ fontSize: 14, color: "#b0a080", lineHeight: 1.9, marginBottom: 32 }}>第一次课为体验课，先聊聊孩子目前的情况和困惑，看看是否合适一起合作。没有任何压力。</p>
+          </FadeIn>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 460 }}>
+            {[["💬", "微信", "请扫描下方二维码联系"], ["🖥", "授课方式", "线上（腾讯会议 / 钉钉）"], ["✓", "收费方式", "体验课后再决定是否继续，无需预付"]].map(([icon, label, val]) => (
+              <div key={label} style={{ display: "flex", alignItems: "flex-start", gap: 14, background: "#211a12", borderRadius: 10, padding: "14px 18px" }}>
+                <span style={{ fontSize: 17, color: "#c8a050" }}>{icon}</span>
+                <div><div style={{ fontSize: 10, letterSpacing: "2px", color: "#a09070", marginBottom: 2 }}>{label}</div><div style={{ fontSize: 14, color: "#f0e4cc" }}>{val}</div></div>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 24, width: 110, height: 110, background: "#2a2218", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 6, border: "0.5px solid #3a3020" }}>
+            <span style={{ fontSize: 26, color: "#6a5a40" }}>▦</span>
+            <div style={{ fontSize: 10, color: "#6a5a40", textAlign: "center", lineHeight: 1.5 }}>微信二维码<br />（替换此处）</div>
+          </div>
+        </div>
+      </section>
+
+      <footer style={{ background: "#110e08", padding: "18px 8%", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "#8a7a5a" }}>信望数理 <span style={{ color: "#c8860a" }}>·</span> 彭老师</div>
+        <div style={{ fontSize: 11, color: "#3a2a18" }}>专注初中 · 小学数学小班课辅导</div>
+      </footer>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════
+//  作业批改工具组件
+// ══════════════════════════════════════════════════
+
 const PROBLEM_TYPES = {
   "一元一次方程":   { steps: ["去分母","去括号","移项","合并同类项","系数化为1"], color: "#4080e0" },
   "一元二次方程":   { steps: ["整理标准形式","选择解法","求解","检验"], color: "#e04060" },
@@ -15,113 +242,37 @@ const PROBLEM_TYPES = {
   "其他计算题":     { steps: [], color: "#8a7a5a" }
 };
 
-const ISSUE_COLORS = {
-  "移项符号错误": "#ff4d6d",
-  "跳步": "#ff9a3c",
-  "计算错误": "#c77dff",
-  "去括号错误": "#e05080",
-  "漏提公因式": "#ff6b35",
-  "分解不彻底": "#e8a030",
-  "漏验根": "#9040c8",
-  "约分错误": "#40a860",
-  "漏解": "#e04060",
-  "符号错误": "#ff4d6d",
-  "乘法公式错误": "#c8860a",
-  "不等号方向错误": "#20a0c0",
-  "漏验证": "#c04080",
-  "去分母漏乘": "#ff6b35",
-  "增根未舍去": "#9040c8",
-  "约项错误": "#e05080",
-  "运算顺序错误": "#8060c0",
-  "绝对值错误": "#8060c0",
-  "负数乘方错误": "#8060c0",
-};
-const ISSUE_ICONS = {
-  "移项符号错误": "±", "跳步": "⤵", "计算错误": "✗", "去括号错误": "()",
-  "漏提公因式": "∑", "分解不彻底": "◑", "漏验根": "✓?", "约分错误": "÷",
-  "漏解": "②", "符号错误": "±", "乘法公式错误": "□", "不等号方向错误": "≷",
-  "漏验证": "?", "去分母漏乘": "×", "增根未舍去": "⊗", "约项错误": "÷",
-  "运算顺序错误": "①", "绝对值错误": "|x|", "负数乘方错误": "²",
-};
+const ISSUE_COLORS = { "移项符号错误":"#ff4d6d","跳步":"#ff9a3c","计算错误":"#c77dff","去括号错误":"#e05080","漏提公因式":"#ff6b35","分解不彻底":"#e8a030","漏验根":"#9040c8","约分错误":"#40a860","漏解":"#e04060","符号错误":"#ff4d6d","乘法公式错误":"#c8860a","不等号方向错误":"#20a0c0","漏验证":"#c04080","去分母漏乘":"#ff6b35","增根未舍去":"#9040c8","约项错误":"#e05080","运算顺序错误":"#8060c0","绝对值错误":"#8060c0","负数乘方错误":"#8060c0" };
+const ISSUE_ICONS  = { "移项符号错误":"±","跳步":"⤵","计算错误":"✗","去括号错误":"()","漏提公因式":"∑","分解不彻底":"◑","漏验根":"✓?","约分错误":"÷","漏解":"②","符号错误":"±","乘法公式错误":"□","不等号方向错误":"≷","漏验证":"?","去分母漏乘":"×","增根未舍去":"⊗","约项错误":"÷","运算顺序错误":"①","绝对值错误":"|x|","负数乘方错误":"²" };
 const issueColor = (t) => ISSUE_COLORS[t] || "#74c0fc";
 const issueIcon  = (t) => ISSUE_ICONS[t]  || "!";
 
-// ── 系统提示词 ────────────────────────────────────
-const SYSTEM_PROMPT = `你是一位严格但耐心的初中数学老师，能检查所有类型计算题的解题过程。
+const SYSTEM_PROMPT = `你是一位严格但耐心的初中数学老师，能检查所有类型计算题的解题过程。图片中有几道题就批改几道题，一道都不能漏。识别变量名时只使用图片中实际出现的字母，不要捏造不存在的字母。发现第一处根本性错误后只报告该错误，不再分析后续步骤。各题型重点检查：一元一次方程：跳步（去分母和去括号合并），去括号符号（用乘法分配律解释），移项变号；一元二次方程：漏解，判别式，各解法符号；二元一次方程组：消元计算，漏验证；因式分解：漏提公因式，公式套用，分解不彻底；整式运算：乘法公式漏项，去括号负号；分式化简：约项错误，漏条件；分式方程：去分母漏乘，漏验根，增根；不等式：乘除负数不变号，数轴端点；根式化简：提取不彻底，有理化；实数运算：绝对值，负数乘方，运算顺序。只返回JSON，字段值不含换行符，issues为空写[]：{"problems":[{"problem_number":1,"problem_type":"题型","transcription":["第1行","第2行"],"overall":"正确","score":90,"steps_detected":["步骤"],"skipped_steps":[],"issues":[{"line":1,"type":"错误类型","content":"该行内容","description":"含原理的说明","suggestion":"正确写法"}],"praise":"","summary":"总体评价"}]}`;
 
-【重要：识别图片中所有题目】
-图片中可能有多道题，必须逐一识别并批改每一道，不能遗漏。按题目在图片中出现的顺序编号。
-
-【识别文字的注意事项】
-- 严格按照图片中实际写的字母转录，不要臆造不存在的字母
-- 常见字母：x、y、a、b、n、m等，务必仔细辨认，不要将x看成n或其他字母
-- 数字和字母要仔细区分，如1和l、0和O
-
-【先判断每道题的题型】
-一元一次方程、一元二次方程、二元一次方程组、因式分解、整式运算、分式化简、分式方程、不等式、根式化简、实数运算、其他计算题
-
-【错误检查原则：发现根本性错误立即停止】
-如果某道题第一步就出现根本性错误（如移项未变号、去括号符号完全错误、公式套错），则：
-- 只在issues中报告该错误
-- summary说明"第X行存在根本性错误，后续步骤均受影响，建议先纠正此处再继续"
-- 不再逐行列出后续所有错误（后续错误都是连锁反应，无意义）
-- score给予较低分数反映问题严重性
-
-【各题型重点检查】
-一元一次方程：跳步（去分母和去括号合并），去括号符号（用乘法分配律解释，如-3×(+2)=-6），移项变号
-一元二次方程：漏解，判别式计算，配方/公式/因式分解符号处理
-二元一次方程组：消元计算，漏代入验证，加减法每项变号
-因式分解：漏提公因式，公式套用，分解不彻底
-整式运算：乘法公式漏项（尤其2ab），去括号负号，指数运算
-分式化简：约项错误（只能约因式），漏写分母不为零条件
-分式方程：去分母漏乘，漏验根，增根未舍去
-不等式：乘除负数不变号（最常见），数轴端点虚实
-根式化简：提取不彻底，有理化错误，不能拆加减根式
-实数运算：绝对值符号，负数乘方括号位置，运算顺序
-
-只返回JSON，所有字段值不得含换行符，issues为空时写[]：
-{"problems":[{"problem_number":1,"problem_type":"题型","transcription":["第1行","第2行"],"overall":"正确","score":90,"steps_detected":["步骤"],"skipped_steps":[],"issues":[{"line":1,"type":"错误类型","content":"该行内容","description":"含原理的错误说明","suggestion":"正确写法"}],"praise":"鼓励","summary":"总体评价"},{"problem_number":2,"problem_type":"题型","transcription":["第1行"],"overall":"正确","score":95,"steps_detected":[],"skipped_steps":[],"issues":[],"praise":"","summary":"总体评价"}]}`;
-
-
-// ── 存储层（部署版用 localStorage，可替换为后端API）──────
 const storage = {
-  get: async (key) => {
-    try { const v = localStorage.getItem(key); return v ? { value: v } : null; } catch { return null; }
-  },
-  set: async (key, value) => {
-    try { localStorage.setItem(key, value); return { value }; } catch { return null; }
-  },
-  delete: async (key) => {
-    try { localStorage.removeItem(key); return { deleted: true }; } catch { return null; }
-  }
+  get: async (key) => { try { const v = localStorage.getItem(key); return v ? { value: v } : null; } catch { return null; } },
+  set: async (key, value) => { try { localStorage.setItem(key, value); return { value }; } catch { return null; } },
+  delete: async (key) => { try { localStorage.removeItem(key); return { deleted: true }; } catch { return null; } }
 };
 
-// ── 图片压缩 ──────────────────────────────────────
 function compressImage(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error("读取文件失败"));
+    reader.onerror = () => reject(new Error("读取失败"));
     reader.onload = (e) => {
       const img = new Image();
       img.onerror = () => reject(new Error("图片解析失败"));
       img.onload = () => {
         const MAX = 1200;
         let w = img.width, h = img.height;
-        if (w > MAX || h > MAX) {
-          if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
-          else { w = Math.round(w * MAX / h); h = MAX; }
-        }
-        const cv = document.createElement("canvas");
-        cv.width = w; cv.height = h;
+        if (w > MAX || h > MAX) { if (w > h) { h = Math.round(h * MAX / w); w = MAX; } else { w = Math.round(w * MAX / h); h = MAX; } }
+        const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
         cv.getContext("2d").drawImage(img, 0, 0, w, h);
         cv.toBlob((blob) => {
           if (!blob) return reject(new Error("压缩失败"));
           const r2 = new FileReader();
-          r2.onload = (e2) => {
-            const full = e2.target.result;
-            resolve({ data: full.split(",")[1], mediaType: "image/jpeg", preview: full });
-          };
-          r2.onerror = () => reject(new Error("读取压缩图失败"));
+          r2.onload = (e2) => { const full = e2.target.result; resolve({ data: full.split(",")[1], mediaType: "image/jpeg", preview: full }); };
+          r2.onerror = () => reject(new Error("读取失败"));
           r2.readAsDataURL(blob);
         }, "image/jpeg", 0.85);
       };
@@ -131,25 +282,11 @@ function compressImage(file) {
   });
 }
 
-// ── JSON 解析（三级容错）────────────────────────────
 function parseResult(raw) {
-  const s = raw.indexOf("{");
-  const e = raw.lastIndexOf("}");
+  const s = raw.indexOf("{"), e = raw.lastIndexOf("}");
   if (s === -1 || e === -1) throw new Error("未找到JSON内容");
   const js = raw.slice(s, e + 1);
-
-  // 级别1：只修复控制字符
-  try {
-    const f1 = js.replace(/[\x00-\x1F\x7F]/g, (c) => {
-      if (c === "\n") return "\\n";
-      if (c === "\r") return "\\r";
-      if (c === "\t") return "\\t";
-      return "";
-    });
-    return JSON.parse(f1);
-  } catch (_) {}
-
-  // 级别2：逐字符修复非法引号和控制字符
+  try { return JSON.parse(js.replace(/[\x00-\x1F\x7F]/g, c => c==="\n"?"\\n":c==="\r"?"\\r":c==="\t"?"\\t":"")); } catch (_) {}
   try {
     let out = "", inStr = false, esc = false;
     for (let i = 0; i < js.length; i++) {
@@ -161,558 +298,292 @@ function parseResult(raw) {
         let j = i + 1;
         while (j < js.length && " \t\n\r".includes(js[j])) j++;
         const nx = js[j];
-        if (nx === ":" || nx === "," || nx === "}" || nx === "]" || j >= js.length) {
-          inStr = false; out += c;
-        } else {
-          out += '\\"';
-        }
+        if (nx === ":" || nx === "," || nx === "}" || nx === "]" || j >= js.length) { inStr = false; out += c; }
+        else { out += '\\"'; }
         continue;
       }
-      if (inStr && code < 32) {
-        if (code === 10) { out += "\\n"; continue; }
-        if (code === 13) { out += "\\r"; continue; }
-        if (code === 9)  { out += "\\t"; continue; }
-        continue;
-      }
+      if (inStr && code < 32) { if (code===10){out+="\\n";continue;} if (code===13){out+="\\r";continue;} if (code===9){out+="\\t";continue;} continue; }
       out += c;
     }
     return JSON.parse(out);
   } catch (_) {}
-
-  // 级别3：逐字段正则提取
-  const gStr = (key) => {
-    const m = raw.match(new RegExp('"' + key + '"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"'));
-    return m ? m[1] : "";
-  };
-  const gNum = (key) => {
-    const m = raw.match(new RegExp('"' + key + '"\\s*:\\s*(\\d+)'));
-    return m ? parseInt(m[1]) : 0;
-  };
-  const gArr = (key) => {
-    const m = raw.match(new RegExp('"' + key + '"\\s*:\\s*\\[([\\s\\S]*?)\\]'));
-    if (!m) return [];
-    const items = [], re = /"((?:[^"\\\\]|\\\\.)*)"/g;
-    let hit;
-    while ((hit = re.exec(m[1])) !== null) items.push(hit[1]);
-    return items;
-  };
-  const gIssues = () => {
-    const m = raw.match(/"issues"\s*:\s*\[([\s\S]*?)\](?=\s*[,}])/);
-    if (!m || !m[1].trim()) return [];
-    const issues = [];
-    m[1].split(/}\s*,\s*{/).forEach((block) => {
-      const gF = (f) => {
-        const fm = block.match(new RegExp('"' + f + '"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"'));
-        return fm ? fm[1] : "";
-      };
-      const gN = (f) => {
-        const fm = block.match(new RegExp('"' + f + '"\\s*:\\s*(\\d+)'));
-        return fm ? parseInt(fm[1]) : 0;
-      };
-      const type = gF("type"), desc = gF("description");
-      if (type || desc) {
-        issues.push({ line: gN("line"), type, content: gF("content"), description: desc, suggestion: gF("suggestion") });
-      }
-    });
-    return issues;
-  };
-
-  const result = {
-    problem_type: gStr("problem_type"),
-    transcription: gArr("transcription"),
-    overall: gStr("overall") || "有问题",
-    score: gNum("score"),
-    steps_detected: gArr("steps_detected"),
-    skipped_steps: gArr("skipped_steps"),
-    issues: gIssues(),
-    praise: gStr("praise"),
-    summary: gStr("summary") || "解析完成，部分内容可能有所缺失。"
-  };
-  if (result.problem_type || result.transcription.length > 0 || result.issues.length > 0) return [result];
+  const gStr = (key) => { const m = raw.match(new RegExp('"'+key+'"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"')); return m?m[1]:""; };
+  const gNum = (key) => { const m = raw.match(new RegExp('"'+key+'"\\s*:\\s*(\\d+)')); return m?parseInt(m[1]):0; };
+  const gArr = (key) => { const m = raw.match(new RegExp('"'+key+'"\\s*:\\s*\\[([\\s\\S]*?)\\]')); if(!m)return[]; const items=[],re=/"((?:[^"\\\\]|\\\\.)*)"/g; let hit; while((hit=re.exec(m[1]))!==null)items.push(hit[1]); return items; };
+  const result = { problem_type:gStr("problem_type"), transcription:gArr("transcription"), overall:gStr("overall")||"有问题", score:gNum("score"), steps_detected:gArr("steps_detected"), skipped_steps:gArr("skipped_steps"), issues:[], praise:gStr("praise"), summary:gStr("summary")||"解析完成。" };
+  if (result.problem_type||result.transcription.length>0) return [result];
   throw new Error("无法解析AI返回内容，请重试");
 }
 
-// 解析多题结果（顶层包含 problems 数组）
 function parseMultiResult(raw) {
-  // 先尝试解析出 problems 数组
   let parsed;
   try { parsed = parseResult(raw); } catch(e) { throw e; }
-
-  // 如果解析结果本身有 problems 字段
-  if (parsed && parsed.problems && Array.isArray(parsed.problems)) {
-    return parsed.problems;
-  }
-  // 如果解析结果是数组
+  if (parsed && parsed.problems && Array.isArray(parsed.problems)) return parsed.problems;
   if (Array.isArray(parsed)) return parsed;
-  // 单题结果包装成数组
   return [parsed];
 }
 
-// ── 格式化时间 ────────────────────────────────────
 function fmtTime(ts) {
   const d = new Date(ts);
-  return (d.getMonth()+1) + "/" + d.getDate() + " " +
-    String(d.getHours()).padStart(2,"0") + ":" +
-    String(d.getMinutes()).padStart(2,"0");
+  return (d.getMonth()+1)+"/"+d.getDate()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
 }
 
-// ── 结果展示组件 ──────────────────────────────────
 function ResultPanel({ result }) {
   const typeInfo = PROBLEM_TYPES[result.problem_type] || PROBLEM_TYPES["其他计算题"];
   const stepsToShow = typeInfo.steps.length > 0 ? typeInfo.steps : ["解题步骤"];
-
   return (
     <div>
       {result.problem_type && (
         <div style={{display:"inline-flex",alignItems:"center",gap:6,background:typeInfo.color+"18",border:"1px solid "+typeInfo.color+"40",borderRadius:20,padding:"4px 12px",marginBottom:12}}>
-          <div style={{width:7,height:7,borderRadius:"50%",background:typeInfo.color}}/>
-          <span style={{fontSize:12,color:typeInfo.color,fontWeight:600}}>{result.problem_type}</span>
+          <div style={{width:7,height:7,borderRadius:"50%",background:typeInfo.color}}/><span style={{fontSize:12,color:typeInfo.color,fontWeight:600}}>{result.problem_type}</span>
         </div>
       )}
-
       <div style={{background:result.overall==="正确"?"#e8f5e8":"#fdf0e0",border:"2px solid "+(result.overall==="正确"?"#60c060":"#e8a030"),borderRadius:14,padding:"18px 20px",display:"flex",alignItems:"center",gap:18,marginBottom:14}}>
         <div style={{fontSize:52,fontWeight:800,lineHeight:1,color:result.overall==="正确"?"#3a8a3a":"#c06020",fontFamily:"monospace"}}>{result.score}</div>
         <div>
-          <div style={{fontSize:16,fontWeight:700,color:result.overall==="正确"?"#3a8a3a":"#c06020",marginBottom:4}}>
-            {result.overall==="正确" ? "✓ 解题过程规范" : "✗ 发现 "+(result.issues?.length||0)+" 处问题"}
-          </div>
+          <div style={{fontSize:16,fontWeight:700,color:result.overall==="正确"?"#3a8a3a":"#c06020",marginBottom:4}}>{result.overall==="正确"?"✓ 解题过程规范":"✗ 发现 "+(result.issues?.length||0)+" 处问题"}</div>
           <div style={{fontSize:13,color:"#5a4a30",lineHeight:1.7}}>{result.summary}</div>
         </div>
       </div>
-
-      {result.transcription && result.transcription.length > 0 && (
+      {result.transcription&&result.transcription.length>0&&(
         <div style={{background:"#faf6ee",border:"1px solid #d8c8a0",borderRadius:12,padding:"14px 18px",marginBottom:12}}>
           <div style={{fontSize:10,letterSpacing:3,color:"#8a7a5a",marginBottom:10}}>识别内容</div>
-          {result.transcription.map((line, i) => {
-            const issue = result.issues && result.issues.find(x => x.line === i+1);
-            return (
-              <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"5px 8px",borderRadius:6,marginBottom:3,background:issue ? issueColor(issue.type)+"18" : "transparent",borderLeft:"3px solid "+(issue ? issueColor(issue.type) : "transparent")}}>
-                <span style={{fontSize:10,color:"#a08060",fontFamily:"monospace",minWidth:18,paddingTop:2}}>{i+1}</span>
-                <span style={{fontSize:14,fontFamily:"monospace",flex:1}}>{line}</span>
-                {issue && <span style={{fontSize:10,background:issueColor(issue.type),color:"#fff",padding:"2px 7px",borderRadius:10,whiteSpace:"nowrap"}}>{issueIcon(issue.type)} {issue.type}</span>}
-              </div>
-            );
+          {result.transcription.map((line,i)=>{
+            const issue=result.issues&&result.issues.find(x=>x.line===i+1);
+            return(<div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"5px 8px",borderRadius:6,marginBottom:3,background:issue?issueColor(issue.type)+"18":"transparent",borderLeft:"3px solid "+(issue?issueColor(issue.type):"transparent")}}>
+              <span style={{fontSize:10,color:"#a08060",fontFamily:"monospace",minWidth:18,paddingTop:2}}>{i+1}</span>
+              <span style={{fontSize:14,fontFamily:"monospace",flex:1}}>{line}</span>
+              {issue&&<span style={{fontSize:10,background:issueColor(issue.type),color:"#fff",padding:"2px 7px",borderRadius:10,whiteSpace:"nowrap"}}>{issueIcon(issue.type)} {issue.type}</span>}
+            </div>);
           })}
         </div>
       )}
-
       <div style={{background:"#faf6ee",border:"1px solid #d8c8a0",borderRadius:12,padding:"14px 18px",marginBottom:12}}>
         <div style={{fontSize:10,letterSpacing:3,color:"#8a7a5a",marginBottom:10}}>步骤完整性</div>
         <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-          {stepsToShow.map((step, i) => {
-            const detected = result.steps_detected && result.steps_detected.some(s => s.includes(step));
-            const skipped  = result.skipped_steps  && result.skipped_steps.some(s => s.includes(step));
-            return (
-              <div key={i} style={{padding:"6px 14px",borderRadius:20,fontSize:12,fontWeight:600,background:skipped?"#ffe0e0":detected?"#e0f5e0":"#f0ebe0",color:skipped?"#c03030":detected?"#3a8a3a":"#8a7a5a",border:"1px solid "+(skipped?"#f0a0a0":detected?"#80c080":"#c8b898")}}>
-                {skipped ? "✗" : detected ? "✓" : "—"} {step}
-              </div>
-            );
+          {stepsToShow.map((step,i)=>{
+            const detected=result.steps_detected&&result.steps_detected.some(s=>s.includes(step));
+            const skipped=result.skipped_steps&&result.skipped_steps.some(s=>s.includes(step));
+            return(<div key={i} style={{padding:"6px 14px",borderRadius:20,fontSize:12,fontWeight:600,background:skipped?"#ffe0e0":detected?"#e0f5e0":"#f0ebe0",color:skipped?"#c03030":detected?"#3a8a3a":"#8a7a5a",border:"1px solid "+(skipped?"#f0a0a0":detected?"#80c080":"#c8b898")}}>{skipped?"✗":detected?"✓":"—"} {step}</div>);
           })}
         </div>
       </div>
-
-      {result.issues && result.issues.length > 0 && (
+      {result.issues&&result.issues.length>0&&(
         <div style={{marginBottom:12}}>
           <div style={{fontSize:10,letterSpacing:3,color:"#8a7a5a",marginBottom:10}}>错误详情</div>
-          {result.issues.map((issue, i) => (
+          {result.issues.map((issue,i)=>(
             <div key={i} style={{background:"#fff",borderRadius:12,padding:"14px 16px",marginBottom:8,border:"1px solid "+issueColor(issue.type)+"40",borderLeft:"4px solid "+issueColor(issue.type),boxShadow:"0 2px 6px rgba(0,0,0,0.05)"}}>
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
                 <span style={{background:issueColor(issue.type),color:"#fff",padding:"3px 10px",borderRadius:12,fontSize:11,fontWeight:700}}>{issueIcon(issue.type)} {issue.type}</span>
                 <span style={{color:"#a08060",fontSize:11}}>第 {issue.line} 行</span>
               </div>
-              {issue.content && <div style={{background:"#f5f0e8",borderRadius:7,padding:"7px 10px",fontFamily:"monospace",fontSize:14,color:"#3a2a10",marginBottom:8,border:"1px solid #e0d0b0"}}>{issue.content}</div>}
+              {issue.content&&<div style={{background:"#f5f0e8",borderRadius:7,padding:"7px 10px",fontFamily:"monospace",fontSize:14,color:"#3a2a10",marginBottom:8,border:"1px solid #e0d0b0"}}>{issue.content}</div>}
               <div style={{fontSize:13,color:"#4a3a20",marginBottom:6,lineHeight:1.7}}>{issue.description}</div>
-              {issue.suggestion && <div style={{fontSize:12,color:"#3a7a3a",fontWeight:600,fontFamily:"monospace",background:"#eaf5ea",padding:"6px 10px",borderRadius:6}}>✓ {issue.suggestion}</div>}
+              {issue.suggestion&&<div style={{fontSize:12,color:"#3a7a3a",fontWeight:600,fontFamily:"monospace",background:"#eaf5ea",padding:"6px 10px",borderRadius:6}}>✓ {issue.suggestion}</div>}
             </div>
           ))}
         </div>
       )}
-
-      {result.praise && (
-        <div style={{background:"#e8f5e8",border:"1px solid #a0d0a0",borderRadius:12,padding:"12px 16px",fontSize:13,color:"#3a6a3a",lineHeight:1.7}}>
-          💬 {result.praise}
-        </div>
-      )}
+      {result.praise&&<div style={{background:"#e8f5e8",border:"1px solid #a0d0a0",borderRadius:12,padding:"12px 16px",fontSize:13,color:"#3a6a3a",lineHeight:1.7}}>💬 {result.praise}</div>}
     </div>
   );
 }
 
-// ── 家长端 ────────────────────────────────────────
-function ParentView() {
-  const [image, setImage]           = useState(null);
-  const [preview, setPreview]       = useState(null);
-  const [studentName, setStudentName] = useState("");
-  const [result, setResult]         = useState(null);
-  const [loading, setLoading]       = useState(false);
-  const [loadingMsg, setLoadingMsg] = useState("");
-  const [error, setError]           = useState("");
-  const [saved, setSaved]           = useState(false);
-  const [dragOver, setDragOver]     = useState(false);
-  const fileRef = useRef(null);
-  const camRef  = useRef(null);
+function ParentView({ onBack }) {
+  const [image,setImage]=useState(null);
+  const [preview,setPreview]=useState(null);
+  const [studentName,setStudentName]=useState("");
+  const [result,setResult]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [loadingMsg,setLoadingMsg]=useState("");
+  const [error,setError]=useState("");
+  const [saved,setSaved]=useState(false);
+  const [dragOver,setDragOver]=useState(false);
+  const fileRef=useRef(null);
+  const camRef=useRef(null);
+  const msgs=["正在识别手写内容...","逐行分析解题步骤...","检查符号处理...","核查跳步情况...","生成批改报告..."];
 
-  const msgs = ["正在识别手写内容...","逐行分析解题步骤...","检查符号处理...","核查跳步情况...","生成批改报告..."];
+  const processFile=async(file)=>{ if(!file||!file.type.startsWith("image/")){setError("请上传图片文件");return;} setError("正在压缩图片..."); try{const c=await compressImage(file);setImage({data:c.data,mediaType:c.mediaType});setPreview(c.preview);setResult(null);setSaved(false);setError("");}catch(e){setError("图片处理失败："+e.message);} };
 
-  const processFile = async (file) => {
-    if (!file || !file.type.startsWith("image/")) { setError("请上传图片文件"); return; }
-    setError("正在压缩图片...");
-    try {
-      const c = await compressImage(file);
-      setImage({ data: c.data, mediaType: c.mediaType });
-      setPreview(c.preview);
-      setResult(null); setSaved(false); setError("");
-    } catch (e) { setError("图片处理失败：" + e.message); }
-  };
-
-  const handleCheck = async () => {
-    if (!image) { setError("请先上传照片"); return; }
-    setError(""); setLoading(true); setResult(null); setSaved(false);
-    let idx = 0; setLoadingMsg(msgs[0]);
-    const timer = setInterval(() => { idx = (idx+1) % msgs.length; setLoadingMsg(msgs[idx]); }, 1800);
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1500,
-          system: SYSTEM_PROMPT,
-          messages: [{ role: "user", content: [
-            { type: "image", source: { type: "base64", media_type: image.mediaType, data: image.data } },
-            { type: "text",  text: "请识别图片中学生的计算题解题过程，判断题型，检查错误，只返回JSON。" }
-          ]}]
-        })
-      });
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        const msg = JSON.stringify(d);
-        if (res.status === 429 || msg.includes("exceeded_limit")) {
-          throw new Error("当前使用量已达上限，请等约5小时后重试（正式部署后用独立Key将不受此限制）");
-        }
-        throw new Error("API错误 " + res.status + ": " + (d?.error?.message || res.statusText));
-      }
-      const data = await res.json();
-      const text = (data.content || []).map(i => i.text || "").join("");
-      const problems = parseMultiResult(text);
+  const handleCheck=async()=>{ if(!image){setError("请先上传照片");return;} setError("");setLoading(true);setResult(null);setSaved(false); let idx=0;setLoadingMsg(msgs[0]); const timer=setInterval(()=>{idx=(idx+1)%msgs.length;setLoadingMsg(msgs[idx]);},1800);
+    try{
+      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1500,system:SYSTEM_PROMPT,messages:[{role:"user",content:[{type:"image",source:{type:"base64",media_type:image.mediaType,data:image.data}},{type:"text",text:"请识别图片中学生的计算题解题过程，判断题型，检查错误，只返回JSON。"}]}]})});
+      if(!res.ok){const d=await res.json().catch(()=>({}));const msg=JSON.stringify(d);if(res.status===429||msg.includes("exceeded_limit")){throw new Error("使用量已达上限，请等约5小时后重试");}throw new Error("API错误 "+res.status+": "+(d?.error?.message||res.statusText));}
+      const data=await res.json();
+      const text=(data.content||[]).map(i=>i.text||"").join("");
+      const problems=parseMultiResult(text);
       setResult(problems);
-      await saveSubmission(problems);
+      const id=Date.now().toString();
+      const totalIssues=problems.reduce((n,p)=>n+(p.issues||[]).length,0);
+      const avgScore=Math.round(problems.reduce((n,p)=>n+(p.score||0),0)/problems.length);
+      const types=problems.map(p=>p.problem_type).filter(Boolean).join("、");
+      const submission={id,timestamp:Date.now(),studentName:studentName.trim()||"未填写姓名",score:avgScore,overall:problems.some(p=>p.overall!=="正确")?"有问题":"正确",issueCount:totalIssues,problemCount:problems.length,problemTypes:types,problems,thumbnail:preview};
+      let list=[];try{const ex=await storage.get("submissions_index");if(ex)list=JSON.parse(ex.value);}catch(_){}
+      list.unshift({id,timestamp:submission.timestamp,studentName:submission.studentName,score:submission.score,overall:submission.overall,issueCount:submission.issueCount,problemCount:submission.problemCount,problemTypes:submission.problemTypes});
+      if(list.length>50)list=list.slice(0,50);
+      await storage.set("submissions_index",JSON.stringify(list));
+      await storage.set("submission_"+id,JSON.stringify(submission));
       setSaved(true);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      clearInterval(timer);
-      setLoading(false);
-    }
+    }catch(e){setError(e.message);}finally{clearInterval(timer);setLoading(false);}
   };
 
-  const saveSubmission = async (problems) => {
-    try {
-      const id = Date.now().toString();
-      const totalIssues = problems.reduce((n, p) => n + (p.issues || []).length, 0);
-      const avgScore = Math.round(problems.reduce((n, p) => n + (p.score || 0), 0) / problems.length);
-      const hasError = problems.some(p => p.overall !== "正确");
-      const types = problems.map(p => p.problem_type).filter(Boolean).join("、");
-      const submission = {
-        id, timestamp: Date.now(),
-        studentName: studentName.trim() || "未填写姓名",
-        score: avgScore,
-        overall: hasError ? "有问题" : "正确",
-        issueCount: totalIssues,
-        problemCount: problems.length,
-        problemTypes: types,
-        problems, thumbnail: preview,
-      };
-      let list = [];
-      try { const ex = await storage.get("submissions_index"); if (ex) list = JSON.parse(ex.value); } catch (_) {}
-      list.unshift({ id, timestamp: submission.timestamp, studentName: submission.studentName, score: submission.score, overall: submission.overall, issueCount: submission.issueCount, problemCount: submission.problemCount, problemTypes: submission.problemTypes });
-      if (list.length > 50) list = list.slice(0, 50);
-      await storage.set("submissions_index", JSON.stringify(list));
-      await storage.set("submission_" + id, JSON.stringify(submission));
-    } catch (_) {}
-  };
+  const reset=()=>{setPreview(null);setImage(null);setResult(null);setSaved(false);setError("");};
 
-  const reset = () => { setPreview(null); setImage(null); setResult(null); setSaved(false); setError(""); };
-
-  const typeColor = result && result.problem_type ? (PROBLEM_TYPES[result.problem_type] || PROBLEM_TYPES["其他计算题"]).color : "#8a7a5a";
-
-  return (
-    <div>
-      {!preview ? (
-        <div
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]); }}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onClick={() => fileRef.current && fileRef.current.click()}
-          style={{border:"2px dashed "+(dragOver?"#e8a030":"#c8b898"),borderRadius:16,background:dragOver?"#fdf5e0":"#faf6ee",padding:"40px 20px",textAlign:"center",cursor:"pointer",marginBottom:16}}
-        >
-          <div style={{fontSize:48,marginBottom:12}}>📷</div>
-          <div style={{fontSize:17,fontWeight:600,color:"#4a3a20",marginBottom:6}}>拍照上传作业</div>
-          <div style={{fontSize:13,color:"#8a7a5a",marginBottom:20}}>支持拖拽、点击选择、或直接拍照</div>
-          <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
-            <button onClick={(e) => { e.stopPropagation(); fileRef.current && fileRef.current.click(); }} style={{background:"#2a2218",color:"#f0e8d0",border:"none",borderRadius:10,padding:"11px 22px",fontSize:14,cursor:"pointer",fontWeight:600}}>📁 选择图片</button>
-            <button onClick={(e) => { e.stopPropagation(); camRef.current && camRef.current.click(); }} style={{background:"#e8a030",color:"#fff",border:"none",borderRadius:10,padding:"11px 22px",fontSize:14,cursor:"pointer",fontWeight:600}}>📸 直接拍照</button>
-          </div>
-        </div>
-      ) : (
-        <div style={{marginBottom:14}}>
-          <div style={{borderRadius:14,overflow:"hidden",border:"2px solid #d8c8a0",position:"relative",background:"#2a2218",marginBottom:10}}>
-            <img src={preview} alt="作业" style={{width:"100%",display:"block",maxHeight:340,objectFit:"contain"}} />
-            <button onClick={reset} style={{position:"absolute",top:10,right:10,background:"rgba(0,0,0,0.6)",color:"#fff",border:"none",borderRadius:20,padding:"5px 12px",fontSize:12,cursor:"pointer"}}>重新上传</button>
-          </div>
-          <input value={studentName} onChange={(e) => setStudentName(e.target.value)} placeholder="请输入学生姓名（可选）"
-            style={{width:"100%",background:"#faf6ee",border:"1px solid #d8c8a0",borderRadius:10,padding:"10px 14px",fontSize:14,color:"#2a2218",outline:"none",boxSizing:"border-box"}} />
-        </div>
-      )}
-
-      <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={(e) => { if (e.target.files && e.target.files[0]) processFile(e.target.files[0]); }} />
-      <input ref={camRef}  type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={(e) => { if (e.target.files && e.target.files[0]) processFile(e.target.files[0]); }} />
-
-      {error && <div style={{background:"#fde8e8",border:"1px solid #f0a0a0",borderRadius:10,padding:"10px 14px",color:"#a03030",fontSize:13,marginBottom:12,lineHeight:1.6}}>{error}</div>}
-
-      {preview && !loading && !result && (
-        <button onClick={handleCheck} style={{width:"100%",background:"linear-gradient(135deg,#2a2218,#4a3a20)",color:"#f0e8d0",border:"none",borderRadius:12,padding:16,fontSize:16,fontWeight:700,cursor:"pointer",letterSpacing:2,marginBottom:12}}>
-          开始批改 →
-        </button>
-      )}
-
-      {loading && (
-        <div style={{background:"#2a2218",borderRadius:14,padding:24,textAlign:"center",marginBottom:12}}>
-          <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:14}}>
-            {["#e8a030","#e06040","#c040a0","#4080e0","#40b060"].map((c,i) => (
-              <div key={i} style={{width:9,height:9,borderRadius:"50%",background:c,animation:"bounce 1.2s ease-in-out "+(i*0.15)+"s infinite"}} />
-            ))}
-          </div>
-          <div style={{color:"#d0c0a0",fontSize:14,fontWeight:500}}>{loadingMsg}</div>
-          <div style={{color:"#6a5a40",fontSize:11,marginTop:6}}>AI 正在识别并批改，请稍候...</div>
-        </div>
-      )}
-
-      {result && Array.isArray(result) && (
+  return(
+    <div style={{minHeight:"100vh",background:"#f5f0e8",fontFamily:"'Noto Sans SC','PingFang SC',sans-serif"}}>
+      <div style={{background:"#2a2218",padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div>
-          {saved && <div style={{background:"#e8f0ff",border:"1px solid #a0b8f0",borderRadius:10,padding:"8px 14px",fontSize:12,color:"#3a5aa0",marginBottom:12}}>✓ 已同步至教师后台</div>}
-
-          {/* 多题汇总栏 */}
-          {result.length > 1 && (
-            <div style={{background:"#2a2218",borderRadius:12,padding:"14px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
-              <div style={{color:"#f0e8d0",fontSize:14,fontWeight:600}}>共识别 {result.length} 道题</div>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                {result.map((p, i) => {
-                  const tc = (PROBLEM_TYPES[p.problem_type] || PROBLEM_TYPES["其他计算题"]).color;
-                  return (
-                    <div key={i} style={{background:tc+"22",border:"1px solid "+tc+"50",borderRadius:16,padding:"3px 10px",fontSize:11,color:tc,fontWeight:600}}>
-                      第{i+1}题 {p.problem_type || "计算题"}
-                      {p.issues && p.issues.length > 0
-                        ? <span style={{marginLeft:5,color:"#ff9a3c"}}>{"×"+p.issues.length}</span>
-                        : <span style={{marginLeft:5,color:"#60c060"}}>✓</span>
-                      }
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* 逐题展示 */}
-          {result.map((problem, idx) => (
-            <div key={idx} style={{marginBottom:20}}>
-              {result.length > 1 && (
-                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-                  <div style={{width:28,height:28,borderRadius:"50%",background:"#2a2218",display:"flex",alignItems:"center",justifyContent:"center",color:"#f0e8d0",fontSize:13,fontWeight:700,flexShrink:0}}>
-                    {idx+1}
-                  </div>
-                  <div style={{height:"0.5px",flex:1,background:"#e0d0b0"}}/>
-                </div>
-              )}
-              <ResultPanel result={problem} />
-            </div>
-          ))}
-
-          <button onClick={reset} style={{width:"100%",marginTop:8,background:"transparent",color:"#6a5a40",border:"1px solid #c8b898",borderRadius:10,padding:12,fontSize:14,cursor:"pointer"}}>
-            检查下一份作业
-          </button>
+          <div style={{fontSize:10,letterSpacing:3,color:"#6a5a3a",marginBottom:2}}>信望数理 · 彭老师</div>
+          <div style={{fontSize:18,fontWeight:700,color:"#f0e8d0"}}>计算题解题检查</div>
         </div>
-      )}
+        <button onClick={onBack} style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"7px 14px",fontSize:12,color:"#c0b090",cursor:"pointer"}}>← 返回主页</button>
+      </div>
+      <div style={{padding:"20px 16px",maxWidth:680,margin:"0 auto"}}>
+        {!preview?(
+          <div onDrop={(e)=>{e.preventDefault();setDragOver(false);if(e.dataTransfer.files[0])processFile(e.dataTransfer.files[0]);}} onDragOver={(e)=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onClick={()=>fileRef.current&&fileRef.current.click()} style={{border:"2px dashed "+(dragOver?"#e8a030":"#c8b898"),borderRadius:16,background:dragOver?"#fdf5e0":"#faf6ee",padding:"40px 20px",textAlign:"center",cursor:"pointer",marginBottom:16}}>
+            <div style={{fontSize:48,marginBottom:12}}>📷</div>
+            <div style={{fontSize:17,fontWeight:600,color:"#4a3a20",marginBottom:6}}>拍照上传作业</div>
+            <div style={{fontSize:13,color:"#8a7a5a",marginBottom:20}}>支持拖拽、点击选择、或直接拍照</div>
+            <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
+              <button onClick={(e)=>{e.stopPropagation();fileRef.current&&fileRef.current.click();}} style={{background:"#2a2218",color:"#f0e8d0",border:"none",borderRadius:10,padding:"11px 22px",fontSize:14,cursor:"pointer",fontWeight:600}}>📁 选择图片</button>
+              <button onClick={(e)=>{e.stopPropagation();camRef.current&&camRef.current.click();}} style={{background:"#e8a030",color:"#fff",border:"none",borderRadius:10,padding:"11px 22px",fontSize:14,cursor:"pointer",fontWeight:600}}>📸 直接拍照</button>
+            </div>
+          </div>
+        ):(
+          <div style={{marginBottom:14}}>
+            <div style={{borderRadius:14,overflow:"hidden",border:"2px solid #d8c8a0",position:"relative",background:"#2a2218",marginBottom:10}}>
+              <img src={preview} alt="作业" style={{width:"100%",display:"block",maxHeight:340,objectFit:"contain"}}/>
+              <button onClick={reset} style={{position:"absolute",top:10,right:10,background:"rgba(0,0,0,0.6)",color:"#fff",border:"none",borderRadius:20,padding:"5px 12px",fontSize:12,cursor:"pointer"}}>重新上传</button>
+            </div>
+            <input value={studentName} onChange={(e)=>setStudentName(e.target.value)} placeholder="请输入学生姓名（可选）" style={{width:"100%",background:"#faf6ee",border:"1px solid #d8c8a0",borderRadius:10,padding:"10px 14px",fontSize:14,color:"#2a2218",outline:"none",boxSizing:"border-box"}}/>
+          </div>
+        )}
+        <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={(e)=>{if(e.target.files&&e.target.files[0])processFile(e.target.files[0]);}}/>
+        <input ref={camRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={(e)=>{if(e.target.files&&e.target.files[0])processFile(e.target.files[0]);}}/>
+        {error&&<div style={{background:"#fde8e8",border:"1px solid #f0a0a0",borderRadius:10,padding:"10px 14px",color:"#a03030",fontSize:13,marginBottom:12,lineHeight:1.6}}>{error}</div>}
+        {preview&&!loading&&!result&&(<button onClick={handleCheck} style={{width:"100%",background:"linear-gradient(135deg,#2a2218,#4a3a20)",color:"#f0e8d0",border:"none",borderRadius:12,padding:16,fontSize:16,fontWeight:700,cursor:"pointer",letterSpacing:2,marginBottom:12}}>开始批改 →</button>)}
+        {loading&&(<div style={{background:"#2a2218",borderRadius:14,padding:24,textAlign:"center",marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:14}}>{["#e8a030","#e06040","#c040a0","#4080e0","#40b060"].map((c,i)=>(<div key={i} style={{width:9,height:9,borderRadius:"50%",background:c,animation:"bounce 1.2s ease-in-out "+(i*0.15)+"s infinite"}}/>))}</div>
+          <div style={{color:"#d0c0a0",fontSize:14,fontWeight:500}}>{loadingMsg}</div>
+        </div>)}
+        {result&&Array.isArray(result)&&(
+          <div>
+            {saved&&<div style={{background:"#e8f0ff",border:"1px solid #a0b8f0",borderRadius:10,padding:"8px 14px",fontSize:12,color:"#3a5aa0",marginBottom:12}}>✓ 已同步至教师后台</div>}
+            {result.length>1&&(<div style={{background:"#2a2218",borderRadius:12,padding:"14px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+              <div style={{color:"#f0e8d0",fontSize:14,fontWeight:600}}>共识别 {result.length} 道题</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{result.map((p,i)=>{const tc=(PROBLEM_TYPES[p.problem_type]||PROBLEM_TYPES["其他计算题"]).color;return(<div key={i} style={{background:tc+"22",border:"1px solid "+tc+"50",borderRadius:16,padding:"3px 10px",fontSize:11,color:tc,fontWeight:600}}>第{i+1}题 {p.problem_type||"计算题"}{p.issues&&p.issues.length>0?<span style={{marginLeft:5,color:"#ff9a3c"}}>{"×"+p.issues.length}</span>:<span style={{marginLeft:5,color:"#60c060"}}>✓</span>}</div>);})}</div>
+            </div>)}
+            {result.map((problem,idx)=>(<div key={idx} style={{marginBottom:20}}>
+              {result.length>1&&(<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:28,height:28,borderRadius:"50%",background:"#2a2218",display:"flex",alignItems:"center",justifyContent:"center",color:"#f0e8d0",fontSize:13,fontWeight:700,flexShrink:0}}>{idx+1}</div><div style={{height:"0.5px",flex:1,background:"#e0d0b0"}}/></div>)}
+              <ResultPanel result={problem}/>
+            </div>))}
+            <button onClick={reset} style={{width:"100%",marginTop:8,background:"transparent",color:"#6a5a40",border:"1px solid #c8b898",borderRadius:10,padding:12,fontSize:14,cursor:"pointer"}}>检查下一份作业</button>
+          </div>
+        )}
+      </div>
+      <style>{`@keyframes bounce{0%,100%{transform:translateY(0);opacity:.5}50%{transform:translateY(-7px);opacity:1}}*{box-sizing:border-box}input::placeholder{color:#b0a080}`}</style>
     </div>
   );
 }
 
-// ── 教师后台 ──────────────────────────────────────
 const TEACHER_PASSWORD = "teacher2024";
 
 function TeacherView({ onLogout }) {
-  const [list, setList]               = useState([]);
-  const [selected, setSelected]       = useState(null);
-  const [detail, setDetail]           = useState(null);
-  const [loadingDetail, setLoadingDetail] = useState(false);
-
-  useEffect(() => { loadList(); }, []);
-
-  const loadList = async () => {
-    try {
-      const r = await storage.get("submissions_index");
-      if (r) setList(JSON.parse(r.value));
-    } catch (_) { setList([]); }
-  };
-
-  const loadDetail = async (id) => {
-    if (selected === id) { setSelected(null); setDetail(null); return; }
-    setSelected(id); setLoadingDetail(true); setDetail(null);
-    try {
-      const r = await storage.get("submission_" + id);
-      if (r) setDetail(JSON.parse(r.value));
-    } catch (_) {}
-    setLoadingDetail(false);
-  };
-
-  const deleteItem = async (id, e) => {
-    e.stopPropagation();
-    if (!confirm("确认删除？")) return;
-    try {
-      await storage.delete("submission_" + id);
-      const newList = list.filter(x => x.id !== id);
-      await storage.set("submissions_index", JSON.stringify(newList));
-      setList(newList);
-      if (selected === id) { setSelected(null); setDetail(null); }
-    } catch (_) {}
-  };
-
-  return (
-    <div>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
-        <div>
-          <div style={{fontSize:11,letterSpacing:3,color:"#8a7a5a"}}>TEACHER DASHBOARD</div>
-          <div style={{fontSize:18,fontWeight:700,color:"#2a2218"}}>学生提交记录</div>
-        </div>
+  const [list,setList]=useState([]);
+  const [selected,setSelected]=useState(null);
+  const [detail,setDetail]=useState(null);
+  const [loadingDetail,setLoadingDetail]=useState(false);
+  useEffect(()=>{loadList();},[]);
+  const loadList=async()=>{try{const r=await storage.get("submissions_index");if(r)setList(JSON.parse(r.value));}catch(_){setList([]);}};
+  const loadDetail=async(id)=>{if(selected===id){setSelected(null);setDetail(null);return;}setSelected(id);setLoadingDetail(true);setDetail(null);try{const r=await storage.get("submission_"+id);if(r)setDetail(JSON.parse(r.value));}catch(_){}setLoadingDetail(false);};
+  const deleteItem=async(id,e)=>{e.stopPropagation();if(!confirm("确认删除？"))return;try{await storage.delete("submission_"+id);const newList=list.filter(x=>x.id!==id);await storage.set("submissions_index",JSON.stringify(newList));setList(newList);if(selected===id){setSelected(null);setDetail(null);}}catch(_){}};
+  return(
+    <div style={{minHeight:"100vh",background:"#f5f0e8",fontFamily:"'Noto Sans SC','PingFang SC',sans-serif"}}>
+      <div style={{background:"#2a2218",padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div><div style={{fontSize:10,letterSpacing:3,color:"#6a5a3a",marginBottom:2}}>信望数理 · 彭老师</div><div style={{fontSize:18,fontWeight:700,color:"#f0e8d0"}}>教师后台</div></div>
         <div style={{display:"flex",gap:8}}>
-          <button onClick={loadList} style={{background:"#f0ebe0",border:"1px solid #c8b898",borderRadius:8,padding:"7px 14px",fontSize:13,cursor:"pointer",color:"#4a3a20"}}>🔄 刷新</button>
-          <button onClick={onLogout} style={{background:"transparent",border:"1px solid #c8b898",borderRadius:8,padding:"7px 14px",fontSize:13,cursor:"pointer",color:"#8a7a5a"}}>退出</button>
+          <button onClick={loadList} style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"7px 14px",fontSize:12,color:"#c0b090",cursor:"pointer"}}>🔄 刷新</button>
+          <button onClick={onLogout} style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"7px 14px",fontSize:12,color:"#c0b090",cursor:"pointer"}}>退出</button>
         </div>
       </div>
-
-      {list.length === 0 ? (
-        <div style={{textAlign:"center",padding:"40px 20px",color:"#8a7a5a",background:"#faf6ee",borderRadius:14,border:"1px dashed #c8b898"}}>
-          <div style={{fontSize:36,marginBottom:10}}>📭</div>
-          <div style={{fontSize:14}}>暂无提交记录</div>
-          <div style={{fontSize:12,marginTop:6}}>家长端上传批改后，记录将自动出现在这里</div>
-        </div>
-      ) : list.map(item => {
-        const tc = (PROBLEM_TYPES[item.problemType] || PROBLEM_TYPES["其他计算题"]).color;
-        return (
-          <div key={item.id}>
-            <div onClick={() => loadDetail(item.id)} style={{background:selected===item.id?"#fff8ee":"#fff",border:"1px solid "+(selected===item.id?"#e8a030":"#e0d0b0"),borderRadius:12,padding:"12px 16px",marginBottom:6,cursor:"pointer",display:"flex",alignItems:"center",gap:12,transition:"all 0.15s"}}>
-              <div style={{width:36,height:36,borderRadius:8,background:item.overall==="正确"?"#e0f5e0":"#ffe8e0",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:16,color:item.overall==="正确"?"#3a8a3a":"#c06020",flexShrink:0}}>
-                {item.score}
-              </div>
+      <div style={{padding:"20px 16px",maxWidth:680,margin:"0 auto"}}>
+        {list.length===0?(
+          <div style={{textAlign:"center",padding:"40px 20px",color:"#8a7a5a",background:"#faf6ee",borderRadius:14,border:"1px dashed #c8b898"}}>
+            <div style={{fontSize:36,marginBottom:10}}>📭</div><div style={{fontSize:14}}>暂无提交记录</div>
+          </div>
+        ):list.map(item=>{
+          const tc=(PROBLEM_TYPES[item.problemType]||PROBLEM_TYPES["其他计算题"]).color;
+          return(<div key={item.id}>
+            <div onClick={()=>loadDetail(item.id)} style={{background:selected===item.id?"#fff8ee":"#fff",border:"1px solid "+(selected===item.id?"#e8a030":"#e0d0b0"),borderRadius:12,padding:"12px 16px",marginBottom:6,cursor:"pointer",display:"flex",alignItems:"center",gap:12}}>
+              <div style={{width:36,height:36,borderRadius:8,background:item.overall==="正确"?"#e0f5e0":"#ffe8e0",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:16,color:item.overall==="正确"?"#3a8a3a":"#c06020",flexShrink:0}}>{item.score}</div>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                   <span style={{fontWeight:600,fontSize:14,color:"#2a2218"}}>{item.studentName}</span>
-                  {item.problemCount > 1 && <span style={{background:"#f0e8d0",color:"#8a6a30",fontSize:10,padding:"1px 7px",borderRadius:10}}>{item.problemCount}道题</span>}
-                  {item.problemTypes && <span style={{background:tc+"18",color:tc,fontSize:10,padding:"1px 7px",borderRadius:10,border:"1px solid "+tc+"40",maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.problemTypes}</span>}
-                  {item.issueCount > 0
-                    ? <span style={{background:"#ff4d6d",color:"#fff",fontSize:10,padding:"1px 7px",borderRadius:10}}>{item.issueCount}处错误</span>
-                    : <span style={{background:"#60c060",color:"#fff",fontSize:10,padding:"1px 7px",borderRadius:10}}>无误</span>
-                  }
+                  {item.problemCount>1&&<span style={{background:"#f0e8d0",color:"#8a6a30",fontSize:10,padding:"1px 7px",borderRadius:10}}>{item.problemCount}道题</span>}
+                  {item.problemTypes&&<span style={{background:tc+"18",color:tc,fontSize:10,padding:"1px 7px",borderRadius:10,border:"1px solid "+tc+"40"}}>{item.problemTypes}</span>}
+                  {item.issueCount>0?<span style={{background:"#ff4d6d",color:"#fff",fontSize:10,padding:"1px 7px",borderRadius:10}}>{item.issueCount}处错误</span>:<span style={{background:"#60c060",color:"#fff",fontSize:10,padding:"1px 7px",borderRadius:10}}>无误</span>}
                 </div>
                 <div style={{fontSize:11,color:"#a08060",marginTop:2}}>{fmtTime(item.timestamp)}</div>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <button onClick={(e) => deleteItem(item.id, e)} style={{background:"#fde8e8",border:"none",borderRadius:6,padding:"4px 8px",fontSize:11,color:"#c03030",cursor:"pointer"}}>删除</button>
+                <button onClick={(e)=>deleteItem(item.id,e)} style={{background:"#fde8e8",border:"none",borderRadius:6,padding:"4px 8px",fontSize:11,color:"#c03030",cursor:"pointer"}}>删除</button>
                 <span style={{color:"#c8b898",fontSize:14}}>{selected===item.id?"▲":"▼"}</span>
               </div>
             </div>
-            {selected === item.id && (
-              <div style={{margin:"-2px 8px 8px",background:"#fffdf8",border:"1px solid #e8d0a0",borderTop:"none",borderRadius:"0 0 12px 12px",padding:16}}>
-                {loadingDetail && <div style={{textAlign:"center",padding:20,color:"#8a7a5a",fontSize:13}}>加载中...</div>}
-                {detail && (
-                  <div>
-                    {detail.thumbnail && (
-                      <div style={{marginBottom:14}}>
-                        <div style={{fontSize:10,letterSpacing:3,color:"#8a7a5a",marginBottom:8}}>提交照片</div>
-                        <img src={detail.thumbnail} alt="作业照片" style={{maxWidth:"100%",borderRadius:8,border:"1px solid #d8c8a0",maxHeight:220,objectFit:"contain",display:"block"}} />
-                      </div>
-                    )}
-                    {Array.isArray(detail.problems) ? detail.problems.map((p, i) => (
-                      <div key={i} style={{marginBottom:16}}>
-                        {detail.problems.length > 1 && (
-                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                            <div style={{width:22,height:22,borderRadius:"50%",background:"#2a2218",display:"flex",alignItems:"center",justifyContent:"center",color:"#f0e8d0",fontSize:11,fontWeight:700}}>{i+1}</div>
-                            <div style={{height:"0.5px",flex:1,background:"#e0d0b0"}}/>
-                          </div>
-                        )}
-                        <ResultPanel result={p} />
-                      </div>
-                    )) : <ResultPanel result={detail.result || detail.problems} />}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
+            {selected===item.id&&(<div style={{margin:"-2px 8px 8px",background:"#fffdf8",border:"1px solid #e8d0a0",borderTop:"none",borderRadius:"0 0 12px 12px",padding:16}}>
+              {loadingDetail&&<div style={{textAlign:"center",padding:20,color:"#8a7a5a",fontSize:13}}>加载中...</div>}
+              {detail&&(<div>
+                {detail.thumbnail&&(<div style={{marginBottom:14}}><div style={{fontSize:10,letterSpacing:3,color:"#8a7a5a",marginBottom:8}}>提交照片</div><img src={detail.thumbnail} alt="作业照片" style={{maxWidth:"100%",borderRadius:8,border:"1px solid #d8c8a0",maxHeight:220,objectFit:"contain",display:"block"}}/></div>)}
+                {Array.isArray(detail.problems)?detail.problems.map((p,i)=>(<div key={i} style={{marginBottom:16}}>
+                  {detail.problems.length>1&&(<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><div style={{width:22,height:22,borderRadius:"50%",background:"#2a2218",display:"flex",alignItems:"center",justifyContent:"center",color:"#f0e8d0",fontSize:11,fontWeight:700}}>{i+1}</div><div style={{height:"0.5px",flex:1,background:"#e0d0b0"}}/></div>)}
+                  <ResultPanel result={p}/>
+                </div>)):<ResultPanel result={detail.result||detail.problems}/>}
+              </div>)}
+            </div>)}
+          </div>);
+        })}
+      </div>
     </div>
   );
 }
 
-// ── 主入口 ────────────────────────────────────────
+// ══════════════════════════════════════════════════
+//  主入口 - 路由控制
+// ══════════════════════════════════════════════════
 export default function App() {
-  const [mode, setMode]       = useState("parent");
+  const [page, setPage] = useState("home"); // home | tool | login | teacher
   const [pwInput, setPwInput] = useState("");
   const [pwError, setPwError] = useState("");
 
   const handleLogin = () => {
-    if (pwInput === TEACHER_PASSWORD) { setMode("teacher"); setPwInput(""); setPwError(""); }
+    if (pwInput === TEACHER_PASSWORD) { setPage("teacher"); setPwInput(""); setPwError(""); }
     else { setPwError("密码错误，请重试"); }
   };
 
-  return (
-    <div style={{minHeight:"100vh",background:"#f5f0e8",fontFamily:"'Noto Sans SC','PingFang SC',sans-serif",color:"#2a2218"}}>
-      <div style={{background:"#2a2218",padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div>
-          <div style={{fontSize:10,letterSpacing:3,color:"#6a5a3a",marginBottom:2}}>信望数理 · 彭老师</div>
-          <div style={{fontSize:20,fontWeight:700,color:"#f0e8d0",letterSpacing:1}}>
-            {mode === "teacher" ? "教师后台" : "计算题解题检查"}
-          </div>
+  if (page === "home") return (
+    <>
+      <HomePage onGoTool={() => setPage("tool")} />
+      <button onClick={() => setPage("login")} style={{ position: "fixed", bottom: 24, right: 24, background: "rgba(42,34,24,0.85)", color: "#c0b090", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 20, padding: "8px 16px", fontSize: 12, cursor: "pointer", zIndex: 99 }}>教师后台</button>
+    </>
+  );
+
+  if (page === "tool") return <ParentView onBack={() => setPage("home")} />;
+
+  if (page === "teacher") return <TeacherView onLogout={() => setPage("home")} />;
+
+  if (page === "login") return (
+    <div style={{ minHeight: "100vh", background: "#f5f0e8", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Noto Sans SC','PingFang SC',sans-serif" }}>
+      <div style={{ background: "#fff", borderRadius: 16, padding: "32px 24px", maxWidth: 360, width: "90%", boxShadow: "0 4px 24px rgba(42,34,24,0.1)" }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ fontSize: 36, marginBottom: 10 }}>🔐</div>
+          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>教师后台登录</div>
         </div>
-        {mode === "parent" && (
-          <button onClick={() => setMode("login")} style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"7px 14px",fontSize:12,color:"#c0b090",cursor:"pointer"}}>
-            教师后台 →
-          </button>
-        )}
+        <input type="password" value={pwInput} onChange={(e) => setPwInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleLogin()} placeholder="请输入密码" style={{ width: "100%", background: "#faf6ee", border: "1px solid #d8c8a0", borderRadius: 10, padding: "12px 14px", fontSize: 15, outline: "none", boxSizing: "border-box", marginBottom: 12, fontFamily: "inherit" }} />
+        {pwError && <div style={{ color: "#c03030", fontSize: 12, marginBottom: 10 }}>⚠ {pwError}</div>}
+        <button onClick={handleLogin} style={{ width: "100%", background: "#2a2218", color: "#fef3dc", border: "none", borderRadius: 10, padding: 13, fontSize: 15, fontWeight: 700, cursor: "pointer", marginBottom: 10 }}>登录</button>
+        <button onClick={() => { setPage("home"); setPwInput(""); setPwError(""); }} style={{ width: "100%", background: "transparent", color: "#8a7a5a", border: "1px solid #d8c8a0", borderRadius: 10, padding: 11, fontSize: 13, cursor: "pointer" }}>返回主页</button>
+        <div style={{ marginTop: 14, textAlign: "center", fontSize: 11, color: "#8a7a5a" }}>默认密码：<span style={{ fontFamily: "monospace", fontWeight: 700 }}>{TEACHER_PASSWORD}</span></div>
       </div>
-
-      <div style={{padding:"20px 16px",maxWidth:680,margin:"0 auto"}}>
-
-        {mode === "parent" && <ParentView />}
-
-        {mode === "login" && (
-          <div style={{background:"#fff",borderRadius:16,padding:"32px 24px",maxWidth:360,margin:"40px auto",boxShadow:"0 4px 24px rgba(42,34,24,0.1)"}}>
-            <div style={{textAlign:"center",marginBottom:24}}>
-              <div style={{fontSize:36,marginBottom:10}}>🔐</div>
-              <div style={{fontSize:18,fontWeight:700,marginBottom:4}}>教师后台登录</div>
-              <div style={{fontSize:12,color:"#8a7a5a"}}>请输入教师密码</div>
-            </div>
-            <input type="password" value={pwInput}
-              onChange={(e) => setPwInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-              placeholder="请输入密码"
-              style={{width:"100%",background:"#faf6ee",border:"1px solid #d8c8a0",borderRadius:10,padding:"12px 14px",fontSize:15,color:"#2a2218",outline:"none",boxSizing:"border-box",marginBottom:12,fontFamily:"inherit"}} />
-            {pwError && <div style={{color:"#c03030",fontSize:12,marginBottom:10}}>⚠ {pwError}</div>}
-            <button onClick={handleLogin} style={{width:"100%",background:"#2a2218",color:"#f0e8d0",border:"none",borderRadius:10,padding:13,fontSize:15,fontWeight:700,cursor:"pointer",marginBottom:10}}>登录</button>
-            <button onClick={() => { setMode("parent"); setPwInput(""); setPwError(""); }} style={{width:"100%",background:"transparent",color:"#8a7a5a",border:"1px solid #d8c8a0",borderRadius:10,padding:11,fontSize:13,cursor:"pointer"}}>返回家长端</button>
-            <div style={{marginTop:16,padding:"10px 14px",background:"#f5f0e8",borderRadius:8,fontSize:11,color:"#8a7a5a",textAlign:"center"}}>
-              默认密码：<span style={{fontFamily:"monospace",fontWeight:700,color:"#4a3a20"}}>{TEACHER_PASSWORD}</span>
-            </div>
-          </div>
-        )}
-
-        {mode === "teacher" && <TeacherView onLogout={() => setMode("parent")} />}
-      </div>
-
-      <style>{`
-        @keyframes bounce { 0%,100%{transform:translateY(0);opacity:.5} 50%{transform:translateY(-7px);opacity:1} }
-        * { box-sizing: border-box; }
-        input::placeholder { color: #b0a080; }
-      `}</style>
     </div>
   );
 }
