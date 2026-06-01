@@ -155,7 +155,7 @@ function HomePage({ onGoTool }) {
           <p style={{ fontSize: 14, color: "#6a5a3a", lineHeight: 1.85, maxWidth: 520, marginBottom: 28 }}>家长拍一张作业照片，AI 自动识别解题步骤，检测跳步、符号错误，并解释原因——不只告诉孩子"错了"，更告诉他"为什么错"。</p>
         </FadeIn>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12, marginBottom: 20 }}>
-          {[["📷", "拍照上传", "家长直接用手机拍，无需下载app"], ["🔍", "AI识别", "自动识别手写，逐行分析步骤"], ["📋", "解释原因", "不只说"错了"，还解释为什么"], ["📡", "同步后台", "彭老师实时看到所有批改记录"]].map(([icon, title, desc]) => (
+          {[["📷", "拍照上传", "家长直接用手机拍，无需下载app"], ["🔍", "AI识别", "自动识别手写，逐行分析步骤"], ["📋", "解释原因", "不只说错了，还解释为什么"], ["📡", "同步后台", "彭老师实时看到所有批改记录"]].map(([icon, title, desc]) => (
             <div key={title} style={{ background: "#fff", borderRadius: 10, padding: "18px 16px", border: "0.5px solid #e0d4c0" }}>
               <div style={{ fontSize: 20, marginBottom: 8 }}>{icon}</div>
               <div style={{ fontSize: 13, fontWeight: 500, color: "#1a1410", marginBottom: 4 }}>{title}</div>
