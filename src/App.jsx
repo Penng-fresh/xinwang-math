@@ -1,5 +1,21 @@
 import { useState, useRef, useEffect } from "react";
 
+// 全局样式注入
+const GlobalStyle = () => {
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.innerHTML = `
+      @import url('https://fonts.loli.net/css2?family=Noto+Serif+SC:wght@400;500;700;900&family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html { scroll-behavior: smooth; }
+      body { font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+    `;
+    document.head.appendChild(style);
+    return () => document.head.removeChild(style);
+  }, []);
+  return null;
+};
+
 // ══════════════════════════════════════════════════
 //  主页面组件
 // ══════════════════════════════════════════════════
@@ -63,7 +79,7 @@ function HomePage({ onGoTool }) {
   );
 
   return (
-    <div style={{ fontFamily: "'Noto Sans SC','PingFang SC',sans-serif", color: "#1e1a14", background: "#fff" }}>
+    <div style={{ fontFamily: "'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif", color: "#1e1a14", background: "#fff" }}>
       {/* Nav */}
       <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: scrolled ? "rgba(252,251,248,0.95)" : "transparent", backdropFilter: scrolled ? "blur(12px)" : "none", borderBottom: scrolled ? "0.5px solid #ede8df" : "none", transition: "all 0.3s", padding: "0 5%", display: "flex", alignItems: "center", justifyContent: "space-between", height: 58 }}>
         <div style={{ fontSize: 15, fontWeight: 500, color: "#1a1410" }}>信望数理 <span style={{ color: "#c8860a" }}>·</span> 彭老师</div>
@@ -78,11 +94,11 @@ function HomePage({ onGoTool }) {
 
       {/* Hero */}
       <section style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", padding: "120px 8% 80px", background: "#fffdf8", position: "relative", overflow: "hidden" }}>
-        <div style={{ position: "absolute", right: "6%", top: "50%", transform: "translateY(-50%)", fontSize: 200, color: "#f0e8d0", fontWeight: 900, lineHeight: 1, userSelect: "none", pointerEvents: "none", fontFamily: "serif" }}>数</div>
+        <div style={{ position: "absolute", right: "6%", top: "50%", transform: "translateY(-50%)", fontSize: 200, color: "#f0e8d0", fontWeight: 900, lineHeight: 1, userSelect: "none", pointerEvents: "none", fontFamily: "'Noto Serif SC', 'Songti SC', STSong, serif" }}>数</div>
         <div style={{ maxWidth: 600, position: "relative" }}>
           <div style={{ display: "inline-block", fontSize: 11, letterSpacing: "3px", color: "#c8860a", background: "#fef3dc", padding: "4px 14px", borderRadius: 20, marginBottom: 24, fontWeight: 500 }}>初中 · 小学数学 · 小班课</div>
-          <h1 style={{ fontSize: "clamp(34px,5vw,54px)", fontWeight: 500, lineHeight: 1.3, color: "#1a1410", margin: "0 0 10px", fontFamily: "serif" }}>理解先于解题</h1>
-          <h1 style={{ fontSize: "clamp(34px,5vw,54px)", fontWeight: 500, lineHeight: 1.3, color: "#c8860a", margin: "0 0 22px", fontFamily: "serif" }}>思维重于练习</h1>
+          <h1 style={{ fontSize: "clamp(34px,5vw,54px)", fontWeight: 500, lineHeight: 1.3, color: "#1a1410", margin: "0 0 10px", fontFamily: "'Noto Serif SC', 'Songti SC', STSong, serif" }}>理解先于解题</h1>
+          <h1 style={{ fontSize: "clamp(34px,5vw,54px)", fontWeight: 500, lineHeight: 1.3, color: "#c8860a", margin: "0 0 22px", fontFamily: "'Noto Serif SC', 'Songti SC', STSong, serif" }}>思维重于练习</h1>
           <p style={{ fontSize: 16, color: "#6a5a3a", lineHeight: 1.95, margin: "0 0 36px", maxWidth: 460 }}>数学不是做题量的竞赛。<br />当孩子真正读懂一个概念，<br />他面对新题型时的从容，会让你看到不同。</p>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <a href="#联系" style={{ background: "#1a1410", color: "#fef3dc", padding: "13px 30px", borderRadius: 8, fontSize: 14, fontWeight: 500, textDecoration: "none", letterSpacing: "1px" }}>预约体验课</a>
@@ -91,7 +107,7 @@ function HomePage({ onGoTool }) {
         </div>
         <div style={{ position: "absolute", bottom: 48, left: "8%", right: "8%", display: "flex", gap: 48, borderTop: "0.5px solid #e8dcc8", paddingTop: 28, flexWrap: "wrap" }}>
           {[["3+", "年教学经验"], ["50+", "服务学生"], ["平均↑22分", "中考提分"]].map(([n, l]) => (
-            <div key={l}><div style={{ fontSize: 26, fontWeight: 500, color: "#1a1410", fontFamily: "serif" }}>{n}</div><div style={{ fontSize: 11, color: "#8a7a5a", letterSpacing: "1px", marginTop: 2 }}>{l}</div></div>
+            <div key={l}><div style={{ fontSize: 26, fontWeight: 500, color: "#1a1410", fontFamily: "'Noto Serif SC', 'Songti SC', STSong, serif" }}>{n}</div><div style={{ fontSize: 11, color: "#8a7a5a", letterSpacing: "1px", marginTop: 2 }}>{l}</div></div>
           ))}
         </div>
       </section>
@@ -100,7 +116,7 @@ function HomePage({ onGoTool }) {
       <section id="理念" style={{ padding: "80px 8%", background: "#1a1410" }}>
         <FadeIn>
           <div style={{ fontSize: 10, letterSpacing: "4px", color: "#c8860a", marginBottom: 12, fontWeight: 500 }}>TEACHING PHILOSOPHY</div>
-          <div style={{ fontSize: 26, fontWeight: 500, color: "#f5ead0", marginBottom: 40, fontFamily: "serif" }}>教学理念</div>
+          <div style={{ fontSize: 26, fontWeight: 500, color: "#f5ead0", marginBottom: 40, fontFamily: "'Noto Serif SC', 'Songti SC', STSong, serif" }}>教学理念</div>
         </FadeIn>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 2 }}>
           {PHILOSOPHY.map((p, i) => (
@@ -121,7 +137,7 @@ function HomePage({ onGoTool }) {
       <section id="成果" style={{ padding: "80px 8%", background: "#fffdf8" }}>
         <FadeIn>
           <div style={{ fontSize: 10, letterSpacing: "4px", color: "#c8860a", marginBottom: 12, fontWeight: 500 }}>STUDENT RESULTS</div>
-          <div style={{ fontSize: 26, fontWeight: 500, color: "#1a1410", marginBottom: 40, fontFamily: "serif" }}>学生成果</div>
+          <div style={{ fontSize: 26, fontWeight: 500, color: "#1a1410", marginBottom: 40, fontFamily: "'Noto Serif SC', 'Songti SC', STSong, serif" }}>学生成果</div>
         </FadeIn>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 16, marginBottom: 20 }}>
           {RESULTS.map((r, i) => (
@@ -151,7 +167,7 @@ function HomePage({ onGoTool }) {
       <section id="工具" style={{ padding: "80px 8%", background: "#f0ebe0" }}>
         <FadeIn>
           <div style={{ fontSize: 10, letterSpacing: "4px", color: "#c8860a", marginBottom: 12, fontWeight: 500 }}>AI TOOL</div>
-          <div style={{ fontSize: 26, fontWeight: 500, color: "#1a1410", marginBottom: 14, fontFamily: "serif" }}>AI 作业检查工具</div>
+          <div style={{ fontSize: 26, fontWeight: 500, color: "#1a1410", marginBottom: 14, fontFamily: "'Noto Serif SC', 'Songti SC', STSong, serif" }}>AI 作业检查工具</div>
           <p style={{ fontSize: 14, color: "#6a5a3a", lineHeight: 1.85, maxWidth: 520, marginBottom: 28 }}>家长拍一张作业照片，AI 自动识别解题步骤，检测跳步、符号错误，并解释原因——不只告诉孩子"错了"，更告诉他"为什么错"。</p>
         </FadeIn>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12, marginBottom: 20 }}>
@@ -176,7 +192,7 @@ function HomePage({ onGoTool }) {
       <section id="常见问题" style={{ padding: "80px 8%", background: "#fffdf8" }}>
         <FadeIn>
           <div style={{ fontSize: 10, letterSpacing: "4px", color: "#c8860a", marginBottom: 12, fontWeight: 500 }}>FAQ</div>
-          <div style={{ fontSize: 26, fontWeight: 500, color: "#1a1410", marginBottom: 36, fontFamily: "serif" }}>常见问题</div>
+          <div style={{ fontSize: 26, fontWeight: 500, color: "#1a1410", marginBottom: 36, fontFamily: "'Noto Serif SC', 'Songti SC', STSong, serif" }}>常见问题</div>
         </FadeIn>
         <div style={{ maxWidth: 640 }}>
           {FAQS.map((faq, i) => (
@@ -198,7 +214,7 @@ function HomePage({ onGoTool }) {
         <div style={{ maxWidth: 560 }}>
           <FadeIn>
             <div style={{ fontSize: 10, letterSpacing: "4px", color: "#c8860a", marginBottom: 12, fontWeight: 500 }}>CONTACT</div>
-            <div style={{ fontSize: 26, fontWeight: 500, color: "#f5ead0", marginBottom: 16, fontFamily: "serif" }}>预约体验课</div>
+            <div style={{ fontSize: 26, fontWeight: 500, color: "#f5ead0", marginBottom: 16, fontFamily: "'Noto Serif SC', 'Songti SC', STSong, serif" }}>预约体验课</div>
             <p style={{ fontSize: 14, color: "#b0a080", lineHeight: 1.9, marginBottom: 32 }}>第一次课为体验课，先聊聊孩子目前的情况和困惑，看看是否合适一起合作。没有任何压力。</p>
           </FadeIn>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 460 }}>
@@ -562,17 +578,18 @@ export default function App() {
 
   if (page === "home") return (
     <>
+      <GlobalStyle />
       <HomePage onGoTool={() => setPage("tool")} />
       <button onClick={() => setPage("login")} style={{ position: "fixed", bottom: 24, right: 24, background: "rgba(42,34,24,0.85)", color: "#c0b090", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 20, padding: "8px 16px", fontSize: 12, cursor: "pointer", zIndex: 99 }}>教师后台</button>
     </>
   );
 
-  if (page === "tool") return <ParentView onBack={() => setPage("home")} />;
+  if (page === "tool") return <><GlobalStyle /><ParentView onBack={() => setPage("home")} /></>;
 
-  if (page === "teacher") return <TeacherView onLogout={() => setPage("home")} />;
+  if (page === "teacher") return <><GlobalStyle /><TeacherView onLogout={() => setPage("home")} /></>;
 
   if (page === "login") return (
-    <div style={{ minHeight: "100vh", background: "#f5f0e8", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Noto Sans SC','PingFang SC',sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: "#f5f0e8", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif" }}>
       <div style={{ background: "#fff", borderRadius: 16, padding: "32px 24px", maxWidth: 360, width: "90%", boxShadow: "0 4px 24px rgba(42,34,24,0.1)" }}>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
           <div style={{ fontSize: 36, marginBottom: 10 }}>🔐</div>
