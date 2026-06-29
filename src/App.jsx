@@ -255,15 +255,27 @@ const PROBLEM_TYPES = {
   "不等式":         { steps: ["去分母/去括号","移项","合并","系数化为1","数轴表示"], color: "#20a0c0" },
   "根式化简":       { steps: ["提完全平方数","化简","有理化分母"], color: "#60a030" },
   "实数运算":       { steps: ["处理绝对值/乘方/开方","按顺序计算"], color: "#8060c0" },
+  "有理数运算":     { steps: ["定符号","算绝对值/数值","去括号变号(如有)","写出结果"], color: "#ff6b9d" },
   "其他计算题":     { steps: [], color: "#8a7a5a" }
 };
 
-const ISSUE_COLORS = { "移项符号错误":"#ff4d6d","跳步":"#ff9a3c","计算错误":"#c77dff","去括号错误":"#e05080","漏提公因式":"#ff6b35","分解不彻底":"#e8a030","漏验根":"#9040c8","约分错误":"#40a860","漏解":"#e04060","符号错误":"#ff4d6d","乘法公式错误":"#c8860a","不等号方向错误":"#20a0c0","漏验证":"#c04080","去分母漏乘":"#ff6b35","增根未舍去":"#9040c8","约项错误":"#e05080","运算顺序错误":"#8060c0","绝对值错误":"#8060c0","负数乘方错误":"#8060c0" };
-const ISSUE_ICONS  = { "移项符号错误":"±","跳步":"⤵","计算错误":"✗","去括号错误":"()","漏提公因式":"∑","分解不彻底":"◑","漏验根":"✓?","约分错误":"÷","漏解":"②","符号错误":"±","乘法公式错误":"□","不等号方向错误":"≷","漏验证":"?","去分母漏乘":"×","增根未舍去":"⊗","约项错误":"÷","运算顺序错误":"①","绝对值错误":"|x|","负数乘方错误":"²" };
+const ISSUE_COLORS = { "移项符号错误":"#ff4d6d","跳步":"#ff9a3c","计算错误":"#c77dff","去括号错误":"#e05080","漏提公因式":"#ff6b35","分解不彻底":"#e8a030","漏验根":"#9040c8","约分错误":"#40a860","漏解":"#e04060","符号错误":"#ff4d6d","乘法公式错误":"#c8860a","不等号方向错误":"#20a0c0","漏验证":"#c04080","去分母漏乘":"#ff6b35","增根未舍去":"#9040c8","约项错误":"#e05080","运算顺序错误":"#8060c0","绝对值错误":"#8060c0","负数乘方错误":"#8060c0","漏负号":"#ff4d6d","去括号变号错误":"#e05080","乘方括号错误":"#c8860a","负号个数错误":"#ff6b9d" };
+const ISSUE_ICONS  = { "移项符号错误":"±","跳步":"⤵","计算错误":"✗","去括号错误":"()","漏提公因式":"∑","分解不彻底":"◑","漏验根":"✓?","约分错误":"÷","漏解":"②","符号错误":"±","乘法公式错误":"□","不等号方向错误":"≷","漏验证":"?","去分母漏乘":"×","增根未舍去":"⊗","约项错误":"÷","运算顺序错误":"①","绝对值错误":"|x|","负数乘方错误":"²","漏负号":"±","去括号变号错误":"()","乘方括号错误":"²","负号个数错误":"±±" };
 const issueColor = (t) => ISSUE_COLORS[t] || "#74c0fc";
 const issueIcon  = (t) => ISSUE_ICONS[t]  || "!";
 
-const SYSTEM_PROMPT = `你是一位严格但耐心的初中数学老师，能检查所有类型计算题的解题过程。图片中有几道题就批改几道题，一道都不能漏。识别变量名时只使用图片中实际出现的字母，不要捏造不存在的字母。发现第一处根本性错误后只报告该错误，不再分析后续步骤。各题型重点检查：一元一次方程：跳步（去分母和去括号合并），去括号符号（用乘法分配律解释），移项变号；一元二次方程：漏解，判别式，各解法符号；二元一次方程组：消元计算，漏验证；因式分解：漏提公因式，公式套用，分解不彻底；整式运算：乘法公式漏项，去括号负号；分式化简：约项错误，漏条件；分式方程：去分母漏乘，漏验根，增根；不等式：乘除负数不变号，数轴端点；根式化简：提取不彻底，有理化；实数运算：绝对值，负数乘方，运算顺序。只返回JSON，字段值不含换行符，issues为空写[]：{"problems":[{"problem_number":1,"problem_type":"题型","transcription":["第1行","第2行"],"overall":"正确","score":90,"steps_detected":["步骤"],"skipped_steps":[],"issues":[{"line":1,"type":"错误类型","content":"该行内容","description":"含原理的说明","suggestion":"正确写法"}],"praise":"","summary":"总体评价"}]}`;
+const SYSTEM_PROMPT = `你是一位严格但耐心的初中数学老师，能检查所有类型计算题的解题过程。图片中有几道题就批改几道题，一道都不能漏。识别变量名时只使用图片中实际出现的字母，不要捏造不存在的字母。发现第一处根本性错误后只报告该错误，不再分析后续步骤。
+
+【有理数运算专项标准（初一，竖式分步骤格式）】这是当前最重要的题型，重点不是"答案对不对"，而是"每一步的符号处理是否规范"。学生作业通常按步骤竖排书写，请逐步对照检查，严格遵循以下四类符号错误的判定标准，发现即标注，不得因最终数值答案凑巧正确而判定为"正确"：
+1. 漏负号：加减运算中，某一项的负号在抄写或计算过程中丢失、或被搬到错误位置（比如 -3+(-5) 算成 3+5，或减法转加法时符号未正确翻转）。
+2. 去括号变号错误：括号前是负号时，括号内每一项符号必须取反（例如 -(3-5)=-3+5，而不是 -(3-5)=-3-5）；只要有一项符号未正确翻转，即判定为该错误。
+3. 乘方括号错误：必须区分 -2² 和 (-2)² ——前者表示"2²再取负"，结果为 -4；后者表示"先加括号再乘方"，结果为 4。学生若在书写或计算中混淆了这两种写法对应的结果，判定为该错误。
+4. 负号个数错误：乘除运算中多个负数相乘除时，结果符号取决于负号个数的奇偶（奇数个负号→结果为负，偶数个负号→结果为正）。学生若数错负号个数导致最终符号判断错误，判定为该错误。
+判分要求：只要解题过程中的任意一步触发上述四类错误之一，该题 overall 必须判定为"有问题"并相应扣分，即使学生最终写出的数值答案与正确答案一致（蒙对/抵消纠错），也不能给"正确"判定，issues 中必须明确指出是哪一步、哪一类符号问题。
+
+【其他题型检查重点，仅在图片确实是对应题型时使用】一元一次方程：跳步（去分母和去括号合并），去括号符号（用乘法分配律解释），移项变号；一元二次方程：漏解，判别式，各解法符号；二元一次方程组：消元计算，漏验证；因式分解：漏提公因式，公式套用，分解不彻底；整式运算：乘法公式漏项，去括号负号；分式化简：约项错误，漏条件；分式方程：去分母漏乘，漏验根，增根；不等式：乘除负数不变号，数轴端点；根式化简：提取不彻底，有理化；实数运算（含根号/绝对值的混合运算，区别于初一有理数运算）：绝对值，负数乘方，运算顺序。
+
+只返回JSON，字段值不含换行符，issues为空写[]：{"problems":[{"problem_number":1,"problem_type":"题型","transcription":["第1行","第2行"],"overall":"正确","score":90,"steps_detected":["步骤"],"skipped_steps":[],"issues":[{"line":1,"type":"错误类型","content":"该行内容","description":"含原理的说明","suggestion":"正确写法"}],"praise":"","summary":"总体评价"}]}`;
 
 const storage = {
   get: async (key) => { try { const v = localStorage.getItem(key); return v ? { value: v } : null; } catch { return null; } },
@@ -423,10 +435,10 @@ function ParentView({ onBack }) {
 
   const handleCheck=async()=>{ if(!image){setError("请先上传照片");return;} setError("");setLoading(true);setResult(null);setSaved(false); let idx=0;setLoadingMsg(msgs[0]); const timer=setInterval(()=>{idx=(idx+1)%msgs.length;setLoadingMsg(msgs[idx]);},1800);
     try{
-      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1500,system:SYSTEM_PROMPT,messages:[{role:"user",content:[{type:"image",source:{type:"base64",media_type:image.mediaType,data:image.data}},{type:"text",text:"请识别图片中学生的计算题解题过程，判断题型，检查错误，只返回JSON。"}]}]})});
-      if(!res.ok){const d=await res.json().catch(()=>({}));const msg=JSON.stringify(d);if(res.status===429||msg.includes("exceeded_limit")){throw new Error("使用量已达上限，请等约5小时后重试");}throw new Error("API错误 "+res.status+": "+(d?.error?.message||res.statusText));}
+      const res=await fetch("/api/grade",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageData:image.data,mediaType:image.mediaType,systemPrompt:SYSTEM_PROMPT,userPrompt:"请识别图片中学生的计算题解题过程，判断题型，检查错误，只返回JSON。"})});
+      if(!res.ok){const d=await res.json().catch(()=>({}));if(res.status===429){throw new Error("使用量已达上限，请稍后重试");}throw new Error("批改服务出错："+(d?.error||res.statusText));}
       const data=await res.json();
-      const text=(data.content||[]).map(i=>i.text||"").join("");
+      const text=data.text||"";
       const problems=parseMultiResult(text);
       setResult(problems);
       const id=Date.now().toString();
@@ -567,7 +579,7 @@ function TeacherView({ onLogout }) {
 //  主入口 - 路由控制
 // ══════════════════════════════════════════════════
 export default function App() {
-  const [page, setPage] = useState("home"); // home | tool | login | teacher
+  const [page, setPage] = useState("tool"); // home | tool | login | teacher（默认直接进入批改功能，首页暂不展示）
   const [pwInput, setPwInput] = useState("");
   const [pwError, setPwError] = useState("");
 
@@ -584,7 +596,13 @@ export default function App() {
     </>
   );
 
-  if (page === "tool") return <><GlobalStyle /><ParentView onBack={() => setPage("home")} /></>;
+  if (page === "tool") return (
+    <>
+      <GlobalStyle />
+      <ParentView onBack={() => setPage("home")} />
+      <button onClick={() => setPage("login")} style={{ position: "fixed", bottom: 24, right: 24, background: "rgba(42,34,24,0.85)", color: "#c0b090", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 20, padding: "8px 16px", fontSize: 12, cursor: "pointer", zIndex: 99 }}>教师后台</button>
+    </>
+  );
 
   if (page === "teacher") return <><GlobalStyle /><TeacherView onLogout={() => setPage("home")} /></>;
 
