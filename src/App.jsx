@@ -417,7 +417,7 @@ function ResultPanel({ result }) {
   );
 }
 
-function ParentView({ onBack }) {
+function ParentView() {
   const [image,setImage]=useState(null);
   const [preview,setPreview]=useState(null);
   const [studentName,setStudentName]=useState("");
@@ -464,7 +464,6 @@ function ParentView({ onBack }) {
           <div style={{fontSize:10,letterSpacing:3,color:"#6a5a3a",marginBottom:2}}>信望数理 · 彭老师</div>
           <div style={{fontSize:18,fontWeight:700,color:"#f0e8d0"}}>计算题解题检查</div>
         </div>
-        <button onClick={onBack} style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"7px 14px",fontSize:12,color:"#c0b090",cursor:"pointer"}}>← 返回主页</button>
       </div>
       <div style={{padding:"20px 16px",maxWidth:680,margin:"0 auto"}}>
         {!preview?(
@@ -513,8 +512,6 @@ function ParentView({ onBack }) {
     </div>
   );
 }
-
-const TEACHER_PASSWORD = "teacher2024";
 
 function TeacherView({ onLogout }) {
   const [list,setList]=useState([]);
@@ -582,10 +579,21 @@ export default function App() {
   const [page, setPage] = useState("tool"); // home | tool | login | teacher（默认直接进入批改功能，首页暂不展示）
   const [pwInput, setPwInput] = useState("");
   const [pwError, setPwError] = useState("");
+  const [pwChecking, setPwChecking] = useState(false);
 
-  const handleLogin = () => {
-    if (pwInput === TEACHER_PASSWORD) { setPage("teacher"); setPwInput(""); setPwError(""); }
-    else { setPwError("密码错误，请重试"); }
+  const handleLogin = async () => {
+    setPwChecking(true);
+    setPwError("");
+    try {
+      const res = await fetch("/api/teacher-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: pwInput }) });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) { setPage("teacher"); setPwInput(""); setPwError(""); }
+      else { setPwError(data.error || "密码错误，请重试"); }
+    } catch (e) {
+      setPwError("登录请求失败，请检查网络后重试");
+    } finally {
+      setPwChecking(false);
+    }
   };
 
   if (page === "home") return (
@@ -599,12 +607,12 @@ export default function App() {
   if (page === "tool") return (
     <>
       <GlobalStyle />
-      <ParentView onBack={() => setPage("home")} />
+      <ParentView />
       <button onClick={() => setPage("login")} style={{ position: "fixed", bottom: 24, right: 24, background: "rgba(42,34,24,0.85)", color: "#c0b090", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 20, padding: "8px 16px", fontSize: 12, cursor: "pointer", zIndex: 99 }}>教师后台</button>
     </>
   );
 
-  if (page === "teacher") return <><GlobalStyle /><TeacherView onLogout={() => setPage("home")} /></>;
+  if (page === "teacher") return <><GlobalStyle /><TeacherView onLogout={() => setPage("tool")} /></>;
 
   if (page === "login") return (
     <div style={{ minHeight: "100vh", background: "#f5f0e8", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif" }}>
@@ -615,9 +623,8 @@ export default function App() {
         </div>
         <input type="password" value={pwInput} onChange={(e) => setPwInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleLogin()} placeholder="请输入密码" style={{ width: "100%", background: "#faf6ee", border: "1px solid #d8c8a0", borderRadius: 10, padding: "12px 14px", fontSize: 15, outline: "none", boxSizing: "border-box", marginBottom: 12, fontFamily: "inherit" }} />
         {pwError && <div style={{ color: "#c03030", fontSize: 12, marginBottom: 10 }}>⚠ {pwError}</div>}
-        <button onClick={handleLogin} style={{ width: "100%", background: "#2a2218", color: "#fef3dc", border: "none", borderRadius: 10, padding: 13, fontSize: 15, fontWeight: 700, cursor: "pointer", marginBottom: 10 }}>登录</button>
-        <button onClick={() => { setPage("home"); setPwInput(""); setPwError(""); }} style={{ width: "100%", background: "transparent", color: "#8a7a5a", border: "1px solid #d8c8a0", borderRadius: 10, padding: 11, fontSize: 13, cursor: "pointer" }}>返回主页</button>
-        <div style={{ marginTop: 14, textAlign: "center", fontSize: 11, color: "#8a7a5a" }}>默认密码：<span style={{ fontFamily: "monospace", fontWeight: 700 }}>{TEACHER_PASSWORD}</span></div>
+        <button onClick={handleLogin} disabled={pwChecking} style={{ width: "100%", background: "#2a2218", color: "#fef3dc", border: "none", borderRadius: 10, padding: 13, fontSize: 15, fontWeight: 700, cursor: pwChecking ? "default" : "pointer", opacity: pwChecking ? 0.6 : 1, marginBottom: 10 }}>{pwChecking ? "验证中…" : "登录"}</button>
+        <button onClick={() => { setPage("tool"); setPwInput(""); setPwError(""); }} style={{ width: "100%", background: "transparent", color: "#8a7a5a", border: "1px solid #d8c8a0", borderRadius: 10, padding: 11, fontSize: 13, cursor: "pointer" }}>取消</button>
       </div>
     </div>
   );
