@@ -427,6 +427,7 @@ function ParentView() {
   const [error,setError]=useState("");
   const [saved,setSaved]=useState(false);
   const [dragOver,setDragOver]=useState(false);
+  const [showTips,setShowTips]=useState(false);
   const fileRef=useRef(null);
   const camRef=useRef(null);
   const msgs=["正在识别手写内容...","逐行分析解题步骤...","检查符号处理...","核查跳步情况...","生成批改报告..."];
@@ -466,6 +467,22 @@ function ParentView() {
         </div>
       </div>
       <div style={{padding:"20px 16px",maxWidth:680,margin:"0 auto"}}>
+        {!preview&&(
+          <div style={{marginBottom:14}}>
+            <div onClick={()=>setShowTips(!showTips)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#faf6ee",border:"1px solid #d8c8a0",borderRadius:10,padding:"10px 14px",cursor:"pointer"}}>
+              <span style={{fontSize:13,color:"#6a5a3a",fontWeight:600}}>📌 拍照小贴士，提高识别准确率</span>
+              <span style={{fontSize:12,color:"#8a7a5a"}}>{showTips?"收起 ▲":"展开 ▼"}</span>
+            </div>
+            {showTips&&(
+              <div style={{background:"#fdf8ec",border:"1px solid #e8d8b0",borderTop:"none",borderRadius:"0 0 10px 10px",padding:"12px 16px",fontSize:12.5,color:"#6a5a3a",lineHeight:1.9}}>
+                <div style={{marginBottom:6}}>📷 建议<b>一次只拍一道题</b>，识别更准确；多题混拍容易串题或漏题</div>
+                <div style={{marginBottom:6}}>✍️ <b>负号要写清楚</b>，别和数字连笔挤在一起——这是符号判断最容易出错的地方</div>
+                <div style={{marginBottom:6}}>📝 按步骤一行一行竖着写；演草和正式解题过程分开写，改错处划一道线表示删除（别涂成一团黑）</div>
+                <div>💡 光线充足、镜头正对纸面拍摄，避免反光和阴影，整道题完整入镜</div>
+              </div>
+            )}
+          </div>
+        )}
         {!preview?(
           <div onDrop={(e)=>{e.preventDefault();setDragOver(false);if(e.dataTransfer.files[0])processFile(e.dataTransfer.files[0]);}} onDragOver={(e)=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onClick={()=>fileRef.current&&fileRef.current.click()} style={{border:"2px dashed "+(dragOver?"#e8a030":"#c8b898"),borderRadius:16,background:dragOver?"#fdf5e0":"#faf6ee",padding:"40px 20px",textAlign:"center",cursor:"pointer",marginBottom:16}}>
             <div style={{fontSize:48,marginBottom:12}}>📷</div>
