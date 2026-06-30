@@ -347,7 +347,7 @@ function compressImage(file) {
 
 function parseResult(raw) {
   const s = raw.indexOf("{"), e = raw.lastIndexOf("}");
-  if (s === -1 || e === -1) throw new Error("未找到JSON内容");
+if (s === -1 || e === -1) throw new Error("AI未按格式返回结果，原始内容：" + raw.slice(0, 200));
   const js = raw.slice(s, e + 1);
   try { return JSON.parse(js.replace(/[\x00-\x1F\x7F]/g, c => c==="\n"?"\\n":c==="\r"?"\\r":c==="\t"?"\\t":"")); } catch (_) {}
   try {
@@ -375,7 +375,7 @@ function parseResult(raw) {
   const gArr = (key) => { const m = raw.match(new RegExp('"'+key+'"\\s*:\\s*\\[([\\s\\S]*?)\\]')); if(!m)return[]; const items=[],re=/"((?:[^"\\\\]|\\\\.)*)"/g; let hit; while((hit=re.exec(m[1]))!==null)items.push(hit[1]); return items; };
   const result = { problem_type:gStr("problem_type"), transcription:gArr("transcription"), overall:gStr("overall")||"有问题", score:gNum("score"), steps_detected:gArr("steps_detected"), skipped_steps:gArr("skipped_steps"), issues:[], praise:gStr("praise"), summary:gStr("summary")||"解析完成。" };
   if (result.problem_type||result.transcription.length>0) return [result];
-  throw new Error("无法解析AI返回内容，请重试");
+throw new Error("AI未按格式返回结果，原始内容：" + raw.slice(0, 200));
 }
 
 function parseMultiResult(raw) {
