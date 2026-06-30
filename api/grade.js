@@ -71,7 +71,17 @@ export default async function handler(req, res) {
       max_tokens: 2048,
     });
 
-    const text = data?.choices?.[0]?.message?.content || "";
+    const choice = data?.choices?.[0];
+    const text = choice?.message?.content || "";
+    if (!text) {
+      // 返回成功但内容为空，常见原因是模型判断无法处理、或被安全过滤拦截。
+      // 把 finish_reason 和原始响应的关键信息一起返回，方便定位具体原因。
+      const reason = choice?.finish_reason || "未知";
+      return res.status(502).json({
+        error: "AI返回了空结果（结束原因：" + reason + "），可能是图片内容被安全过滤拦截，或模型处理异常，请换一张照片重试",
+        debugRaw: JSON.stringify(data).slice(0, 500),
+      });
+    }
     return res.status(200).json({ text });
   } catch (e) {
     if (e && e.status) {
@@ -83,3 +93,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "调用智谱 API 失败：" + e.message });
   }
 }
+
