@@ -2,21 +2,33 @@ import { useState, useRef, useEffect } from "react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
 
-// 把混合了普通文字和 LaTeX 公式片段（如 \frac{1}{4}、|...|）的字符串，
-// 渲染成可读的数学排版。AI 返回的内容里数字部分是 LaTeX 语法，
-// 不做这层转换的话，家长会直接看到一堆反斜杠和大括号。
+// 把混合了中文说明和裸露 LaTeX 片段（如 \frac{1}{2}）的字符串渲染成可读排版。
+// AI 返回的文本里数字部分用 LaTeX 语法书写，但前后不会自动带 $ 定界符，
+// 所以这里直接按"\命令{...}{...}"或单独的{...}模式扫描，把能识别成公式的片段单独渲染，
+// 其余中文/普通文字原样输出，不整段塞给 KaTeX（否则中文会被当成数学符号报错或乱码）。
+const LATEX_TOKEN = /\\(?:frac|sqrt)\{[^{}]*\}(?:\{[^{}]*\})?|\\(?:left|right)?[|]/g;
 function MathText({ children }) {
   const text = String(children ?? "");
-  // 把整行包在 $...$ 里整体交给 KaTeX 处理：KaTeX 能正确处理普通文字和公式混排，
-  // 比手动按 \frac 分段更稳，也能正确显示括号、绝对值符号、负号等。
-  let html;
-  try {
-    html = katex.renderToString(text, { throwOnError: false, displayMode: false, output: "html" });
-  } catch {
-    html = null;
+  if (!/\\(frac|sqrt)/.test(text)) return <span>{text}</span>; // 没有公式命令，直接原样输出，跳过解析
+  const parts = [];
+  let lastIndex = 0;
+  let m;
+  const re = new RegExp(LATEX_TOKEN);
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > lastIndex) parts.push({ type: "text", value: text.slice(lastIndex, m.index) });
+    parts.push({ type: "formula", value: m[0] });
+    lastIndex = m.index + m[0].length;
   }
-  if (!html) return <span>{text}</span>;
-  return <span dangerouslySetInnerHTML={{ __html: html }} />;
+  if (lastIndex < text.length) parts.push({ type: "text", value: text.slice(lastIndex) });
+  return <>{parts.map((p, i) => {
+    if (p.type === "formula") {
+      try {
+        const html = katex.renderToString(p.value, { throwOnError: false, displayMode: false, strict: false });
+        return <span key={i} dangerouslySetInnerHTML={{ __html: html }} />;
+      } catch { return <span key={i}>{p.value}</span>; }
+    }
+    return <span key={i}>{p.value}</span>;
+  })}</>;
 }
 
 // 全局样式注入
@@ -285,14 +297,17 @@ const issueIcon  = (t) => ISSUE_ICONS[t]  || "!";
 
 const SYSTEM_PROMPT = `你是一位严格但耐心的初中数学老师，能检查所有类型计算题的解题过程。图片中有几道题就批改几道题，一道都不能漏。识别变量名时只使用图片中实际出现的字母，不要捏造不存在的字母。发现第一处根本性错误后只报告该错误，不再分析后续步骤。
 
-【有理数运算专项标准（初一，竖式分步骤格式）】这是当前最重要的题型，重点不是"答案对不对"，而是"每一步的符号处理是否规范"。学生作业通常按步骤竖排书写，请逐步对照检查，严格遵循以下四类符号错误的判定标准，发现即标注，不得因最终数值答案凑巧正确而判定为"正确"：
-1. 漏负号：加减运算中，某一项的负号在抄写或计算过程中丢失、或被搬到错误位置（比如 -3+(-5) 算成 3+5，或减法转加法时符号未正确翻转）。
-2. 去括号变号错误：括号前是负号时，括号内每一项符号必须取反（例如 -(3-5)=-3+5，而不是 -(3-5)=-3-5）；只要有一项符号未正确翻转，即判定为该错误。
+【有理数运算专项标准（初一，竖式分步骤格式）】这是当前最重要的题型，重点不是"答案对不对"，而是"每一步的符号处理是否规范"。学生作业通常按步骤竖排书写，请逐步对照检查，严格遵循以下五类符号错误的判定标准，发现即标注，不得因最终数值答案凑巧正确而判定为"正确"：
+1. 漏负号：加减运算中，某一项的负号在抄写或计算过程中丢失、或被搬到错误位置（比如 -3+(-5) 算成 3+5，或减法转加法时符号未正确翻转）。最容易在"两个数相加减、只看数字部分计算、却保留或丢弃了原有负号"时出现，例如 -1/4+3/4 这种异号相加，学生只算分子部分 1+3=4 或忽略分母通分，却在结果前随意保留了一个负号（比如错误写成 -1），而正确做法应先判断两数相加后的真实符号和绝对值再写结果。
+2. 去括号变号错误：括号前是负号、括号符号为小括号"()"或中括号"[]"时，括号内每一项符号必须取反（例如 -(3-5)=-3+5，而不是 -(3-5)=-3-5）；只要有一项符号未正确翻转，即判定为该错误。注意：此类错误专指"()"或"[]"小括号/中括号，不包括绝对值符号"| |"，绝对值符号的处理见第5类。
 3. 乘方括号错误：必须区分 -2² 和 (-2)² ——前者表示"2²再取负"，结果为 -4；后者表示"先加括号再乘方"，结果为 4。学生若在书写或计算中混淆了这两种写法对应的结果，判定为该错误。
 4. 负号个数错误：乘除运算中多个负数相乘除时，结果符号取决于负号个数的奇偶（奇数个负号→结果为负，偶数个负号→结果为正）。学生若数错负号个数导致最终符号判断错误，判定为该错误。
-判分要求：只要解题过程中的任意一步触发上述四类错误之一，该题 overall 必须判定为"有问题"并相应扣分，即使学生最终写出的数值答案与正确答案一致（蒙对/抵消纠错），也不能给"正确"判定，issues 中必须明确指出是哪一步、哪一类符号问题。
+5. 绝对值错误：遇到绝对值符号"| |"时，必须先计算绝对值内部的真实数值（含符号的代数和），再根据正负判断去掉绝对值符号后的结果（内部为正或0则直接去掉符号，内部为负则取相反数）。常见错误：把绝对值符号内的算式直接拆开展开（如把 -|-1+1/2| 错误地展开成 -1+1/2，丢失了绝对值符号本应起到的"先算清楚内部、再判断正负"这一步），或绝对值内部算对了但取符号时出错。只要绝对值的处理过程（不管是符号"| |"丢失、内部计算错误，还是正负判断错误）出现问题，都归类为"绝对值错误"，不要归类为"去括号变号错误"。
+判分要求：只要解题过程中的任意一步触发上述五类错误之一，该题 overall 必须判定为"有问题"并相应扣分，即使学生最终写出的数值答案与正确答案一致（蒙对/抵消纠错），也不能给"正确"判定。请完整检查解题过程的每一步，不要在发现第一处错误后就停止分析——但 issues 数组最多列出 2-3 个最值得指出的错误（按出现顺序优先选择前面步骤的错误），避免一次性给出过多批注让学生困惑；若同一类错误在多个步骤重复出现，只需挑一次代表性的指出即可。
 
 【其他题型检查重点，仅在图片确实是对应题型时使用】一元一次方程：跳步（去分母和去括号合并），去括号符号（用乘法分配律解释），移项变号；一元二次方程：漏解，判别式，各解法符号；二元一次方程组：消元计算，漏验证；因式分解：漏提公因式，公式套用，分解不彻底；整式运算：乘法公式漏项，去括号负号；分式化简：约项错误，漏条件；分式方程：去分母漏乘，漏验根，增根；不等式：乘除负数不变号，数轴端点；根式化简：提取不彻底，有理化；实数运算（含根号/绝对值的混合运算，区别于初一有理数运算）：绝对值，负数乘方，运算顺序。
+
+【公式书写格式】所有字段（transcription、content、description、suggestion、summary、praise）中如果出现数学表达式（分数、根号、绝对值、括号算式等），必须用 $ 符号把公式片段包裹起来，公式用标准 LaTeX 语法（如分数写作 \\frac{分子}{分母}），中文说明文字放在 $ 符号外面。例如："绝对值运算错误，$|-1+\\frac{1}{2}|=\\frac{1}{2}$，原式应转化为 $-\\frac{1}{2}$"。这样前端才能正确渲染成可读的数学排版，不按此格式输出会导致家长看到无法理解的代码符号。
 
 只返回JSON，字段值不含换行符，issues为空写[]：{"problems":[{"problem_number":1,"problem_type":"题型","transcription":["第1行","第2行"],"overall":"正确","score":90,"steps_detected":["步骤"],"skipped_steps":[],"issues":[{"line":1,"type":"错误类型","content":"该行内容","description":"含原理的说明","suggestion":"正确写法"}],"praise":"","summary":"总体评价"}]}`;
 
@@ -390,7 +405,7 @@ function ResultPanel({ result }) {
         <div style={{fontSize:52,fontWeight:800,lineHeight:1,color:result.overall==="正确"?"#3a8a3a":"#c06020",fontFamily:"monospace"}}>{result.score}</div>
         <div>
           <div style={{fontSize:16,fontWeight:700,color:result.overall==="正确"?"#3a8a3a":"#c06020",marginBottom:4}}>{result.overall==="正确"?"✓ 解题过程规范":"✗ 发现 "+(result.issues?.length||0)+" 处问题"}</div>
-          <div style={{fontSize:13,color:"#5a4a30",lineHeight:1.7}}>{result.summary}</div>
+          <div style={{fontSize:13,color:"#5a4a30",lineHeight:1.7}}><MathText>{result.summary}</MathText></div>
         </div>
       </div>
       {result.transcription&&result.transcription.length>0&&(
@@ -426,13 +441,13 @@ function ResultPanel({ result }) {
                 <span style={{color:"#a08060",fontSize:11}}>第 {issue.line} 行</span>
               </div>
               {issue.content&&<div style={{background:"#f5f0e8",borderRadius:7,padding:"7px 10px",fontSize:14,color:"#3a2a10",marginBottom:8,border:"1px solid #e0d0b0"}}><MathText>{issue.content}</MathText></div>}
-              <div style={{fontSize:13,color:"#4a3a20",marginBottom:6,lineHeight:1.7}}>{issue.description}</div>
+              <div style={{fontSize:13,color:"#4a3a20",marginBottom:6,lineHeight:1.7}}><MathText>{issue.description}</MathText></div>
               {issue.suggestion&&<div style={{fontSize:12,color:"#3a7a3a",fontWeight:600,background:"#eaf5ea",padding:"6px 10px",borderRadius:6}}>✓ <MathText>{issue.suggestion}</MathText></div>}
             </div>
           ))}
         </div>
       )}
-      {result.praise&&<div style={{background:"#e8f5e8",border:"1px solid #a0d0a0",borderRadius:12,padding:"12px 16px",fontSize:13,color:"#3a6a3a",lineHeight:1.7}}>💬 {result.praise}</div>}
+      {result.praise&&<div style={{background:"#e8f5e8",border:"1px solid #a0d0a0",borderRadius:12,padding:"12px 16px",fontSize:13,color:"#3a6a3a",lineHeight:1.7}}>💬 <MathText>{result.praise}</MathText></div>}
     </div>
   );
 }
