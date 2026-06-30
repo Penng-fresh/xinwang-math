@@ -1,4 +1,23 @@
 import { useState, useRef, useEffect } from "react";
+import katex from "katex";
+import "katex/dist/katex.min.css";
+
+// 把混合了普通文字和 LaTeX 公式片段（如 \frac{1}{4}、|...|）的字符串，
+// 渲染成可读的数学排版。AI 返回的内容里数字部分是 LaTeX 语法，
+// 不做这层转换的话，家长会直接看到一堆反斜杠和大括号。
+function MathText({ children }) {
+  const text = String(children ?? "");
+  // 把整行包在 $...$ 里整体交给 KaTeX 处理：KaTeX 能正确处理普通文字和公式混排，
+  // 比手动按 \frac 分段更稳，也能正确显示括号、绝对值符号、负号等。
+  let html;
+  try {
+    html = katex.renderToString(text, { throwOnError: false, displayMode: false, output: "html" });
+  } catch {
+    html = null;
+  }
+  if (!html) return <span>{text}</span>;
+  return <span dangerouslySetInnerHTML={{ __html: html }} />;
+}
 
 // 全局样式注入
 const GlobalStyle = () => {
@@ -381,7 +400,7 @@ function ResultPanel({ result }) {
             const issue=result.issues&&result.issues.find(x=>x.line===i+1);
             return(<div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"5px 8px",borderRadius:6,marginBottom:3,background:issue?issueColor(issue.type)+"18":"transparent",borderLeft:"3px solid "+(issue?issueColor(issue.type):"transparent")}}>
               <span style={{fontSize:10,color:"#a08060",fontFamily:"monospace",minWidth:18,paddingTop:2}}>{i+1}</span>
-              <span style={{fontSize:14,fontFamily:"monospace",flex:1}}>{line}</span>
+              <span style={{fontSize:14,flex:1}}><MathText>{line}</MathText></span>
               {issue&&<span style={{fontSize:10,background:issueColor(issue.type),color:"#fff",padding:"2px 7px",borderRadius:10,whiteSpace:"nowrap"}}>{issueIcon(issue.type)} {issue.type}</span>}
             </div>);
           })}
@@ -406,9 +425,9 @@ function ResultPanel({ result }) {
                 <span style={{background:issueColor(issue.type),color:"#fff",padding:"3px 10px",borderRadius:12,fontSize:11,fontWeight:700}}>{issueIcon(issue.type)} {issue.type}</span>
                 <span style={{color:"#a08060",fontSize:11}}>第 {issue.line} 行</span>
               </div>
-              {issue.content&&<div style={{background:"#f5f0e8",borderRadius:7,padding:"7px 10px",fontFamily:"monospace",fontSize:14,color:"#3a2a10",marginBottom:8,border:"1px solid #e0d0b0"}}>{issue.content}</div>}
+              {issue.content&&<div style={{background:"#f5f0e8",borderRadius:7,padding:"7px 10px",fontSize:14,color:"#3a2a10",marginBottom:8,border:"1px solid #e0d0b0"}}><MathText>{issue.content}</MathText></div>}
               <div style={{fontSize:13,color:"#4a3a20",marginBottom:6,lineHeight:1.7}}>{issue.description}</div>
-              {issue.suggestion&&<div style={{fontSize:12,color:"#3a7a3a",fontWeight:600,fontFamily:"monospace",background:"#eaf5ea",padding:"6px 10px",borderRadius:6}}>✓ {issue.suggestion}</div>}
+              {issue.suggestion&&<div style={{fontSize:12,color:"#3a7a3a",fontWeight:600,background:"#eaf5ea",padding:"6px 10px",borderRadius:6}}>✓ <MathText>{issue.suggestion}</MathText></div>}
             </div>
           ))}
         </div>
