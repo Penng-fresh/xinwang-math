@@ -291,6 +291,7 @@ function compressImage(file) {
       const img = new Image();
       img.onerror = () => reject(new Error("图片解析失败"));
       img.onload = () => {
+        const isLandscape = img.width > img.height * 1.15; // 宽明显大于高，判定为横拍
         const MAX = 1200;
         let w = img.width, h = img.height;
         if (w > MAX || h > MAX) { if (w > h) { h = Math.round(h * MAX / w); w = MAX; } else { w = Math.round(w * MAX / h); h = MAX; } }
@@ -299,7 +300,7 @@ function compressImage(file) {
         cv.toBlob((blob) => {
           if (!blob) return reject(new Error("压缩失败"));
           const r2 = new FileReader();
-          r2.onload = (e2) => { const full = e2.target.result; resolve({ data: full.split(",")[1], mediaType: "image/jpeg", preview: full }); };
+          r2.onload = (e2) => { const full = e2.target.result; resolve({ data: full.split(",")[1], mediaType: "image/jpeg", preview: full, isLandscape }); };
           r2.onerror = () => reject(new Error("读取失败"));
           r2.readAsDataURL(blob);
         }, "image/jpeg", 0.85);
@@ -432,7 +433,7 @@ function ParentView() {
   const camRef=useRef(null);
   const msgs=["正在识别手写内容...","逐行分析解题步骤...","检查符号处理...","核查跳步情况...","生成批改报告..."];
 
-  const processFile=async(file)=>{ if(!file||!file.type.startsWith("image/")){setError("请上传图片文件");return;} setError("正在压缩图片..."); try{const c=await compressImage(file);setImage({data:c.data,mediaType:c.mediaType});setPreview(c.preview);setResult(null);setSaved(false);setError("");}catch(e){setError("图片处理失败："+e.message);} };
+  const processFile=async(file)=>{ if(!file||!file.type.startsWith("image/")){setError("请上传图片文件");return;} setError("正在压缩图片..."); try{const c=await compressImage(file);setImage({data:c.data,mediaType:c.mediaType});setPreview(c.preview);setResult(null);setSaved(false);setError(c.isLandscape?"⚠️ 检测到这张照片是横着拍的，文字会变成竖排，AI容易看错数字。建议删除重拍：手机竖直拿、文字方向跟平时写字一样。":"");}catch(e){setError("图片处理失败："+e.message);} };
 
   const handleCheck=async()=>{ if(!image){setError("请先上传照片");return;} setError("");setLoading(true);setResult(null);setSaved(false); let idx=0;setLoadingMsg(msgs[0]); const timer=setInterval(()=>{idx=(idx+1)%msgs.length;setLoadingMsg(msgs[idx]);},1800);
     try{
@@ -475,6 +476,7 @@ function ParentView() {
             </div>
             {showTips&&(
               <div style={{background:"#fdf8ec",border:"1px solid #e8d8b0",borderTop:"none",borderRadius:"0 0 10px 10px",padding:"12px 16px",fontSize:12.5,color:"#6a5a3a",lineHeight:1.9}}>
+                <div style={{marginBottom:6}}>📱 <b>手机保持竖直拍照</b>，文字方向跟平时写字一样；横着拍会让AI认错数字，别为了让算式显得长就横拍</div>
                 <div style={{marginBottom:6}}>📷 建议<b>一次只拍一道题</b>，识别更准确；多题混拍容易串题或漏题</div>
                 <div style={{marginBottom:6}}>✍️ <b>负号要写清楚</b>，别和数字连笔挤在一起——这是符号判断最容易出错的地方</div>
                 <div style={{marginBottom:6}}>📝 按步骤一行一行竖着写；演草和正式解题过程分开写，改错处划一道线表示删除（别涂成一团黑）</div>
