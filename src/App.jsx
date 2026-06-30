@@ -437,7 +437,7 @@ function ParentView() {
   const handleCheck=async()=>{ if(!image){setError("请先上传照片");return;} setError("");setLoading(true);setResult(null);setSaved(false); let idx=0;setLoadingMsg(msgs[0]); const timer=setInterval(()=>{idx=(idx+1)%msgs.length;setLoadingMsg(msgs[idx]);},1800);
     try{
       const res=await fetch("/api/grade",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageData:image.data,mediaType:image.mediaType,systemPrompt:SYSTEM_PROMPT,userPrompt:"请识别图片中学生的计算题解题过程，判断题型，检查错误，只返回JSON。"})});
-      if(!res.ok){const d=await res.json().catch(()=>({}));if(res.status===429){throw new Error("使用量已达上限，请稍后重试");}throw new Error("批改服务出错："+(d?.error||res.statusText));}
+      if(!res.ok){const d=await res.json().catch(()=>({}));throw new Error("批改服务出错："+(d?.error||res.statusText));}
       const data=await res.json();
       const text=data.text||"";
       const problems=parseMultiResult(text);
