@@ -2,32 +2,42 @@ import { useState, useRef, useEffect } from "react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
 
-// 把混合了中文说明和裸露 LaTeX 片段（如 \frac{1}{2}）的字符串渲染成可读排版。
-// AI 返回的文本里数字部分用 LaTeX 语法书写，但前后不会自动带 $ 定界符，
-// 所以这里直接按"\命令{...}{...}"或单独的{...}模式扫描，把能识别成公式的片段单独渲染，
-// 其余中文/普通文字原样输出，不整段塞给 KaTeX（否则中文会被当成数学符号报错或乱码）。
-const LATEX_TOKEN = /\\(?:frac|sqrt)\{[^{}]*\}(?:\{[^{}]*\})?|\\(?:left|right)?[|]/g;
+// MathText：把 AI 返回的混合文本（中文 + LaTeX 公式）渲染成可读排版。
+// AI 有时会用 $...$ 包裹公式（如 $\frac{1}{2}$），有时直接裸写 \frac{1}{2}，
+// 这个组件两种情况都能处理，不会让 $ 符号残留在页面上。
 function MathText({ children }) {
   const text = String(children ?? "");
-  if (!/\\(frac|sqrt)/.test(text)) return <span>{text}</span>; // 没有公式命令，直接原样输出，跳过解析
+  if (!text) return <span />;
+
+  // 第一步：先按 $...$ 整体切分（优先处理带定界符的完整公式块）
+  // 同时也匹配裸露的 \frac{}{} 和 \sqrt{}，统一放入 parts 队列
   const parts = [];
-  let lastIndex = 0;
-  let m;
-  const re = new RegExp(LATEX_TOKEN);
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > lastIndex) parts.push({ type: "text", value: text.slice(lastIndex, m.index) });
-    parts.push({ type: "formula", value: m[0] });
-    lastIndex = m.index + m[0].length;
-  }
-  if (lastIndex < text.length) parts.push({ type: "text", value: text.slice(lastIndex) });
-  return <>{parts.map((p, i) => {
-    if (p.type === "formula") {
-      try {
-        const html = katex.renderToString(p.value, { throwOnError: false, displayMode: false, strict: false });
-        return <span key={i} dangerouslySetInnerHTML={{ __html: html }} />;
-      } catch { return <span key={i}>{p.value}</span>; }
+  // 正则：匹配 $...$（非贪婪）或 \frac{}{} 或 \sqrt{} 三种情况
+  const TOKEN = /\$([^$]+)\$|\\frac\{[^{}]*\}\{[^{}]*\}|\\sqrt\{[^{}]*\}/g;
+  let last = 0, m;
+  while ((m = TOKEN.exec(text)) !== null) {
+    if (m.index > last) {
+      // 中间的普通文字：去掉孤立的 $ 符号（可能是 AI 格式不规范的残留）
+      const txt = text.slice(last, m.index).replace(/\$/g, "");
+      if (txt) parts.push({ t: "text", v: txt });
     }
-    return <span key={i}>{p.value}</span>;
+    // m[1] 有值说明是 $...$ 包裹的，取内部公式；否则整体就是 \frac 或 \sqrt
+    parts.push({ t: "formula", v: m[1] !== undefined ? m[1] : m[0] });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) {
+    const txt = text.slice(last).replace(/\$/g, "");
+    if (txt) parts.push({ t: "text", v: txt });
+  }
+
+  return <>{parts.map((p, i) => {
+    if (p.t === "formula") {
+      try {
+        const html = katex.renderToString(p.v, { throwOnError: false, displayMode: false, strict: false });
+        return <span key={i} dangerouslySetInnerHTML={{ __html: html }} />;
+      } catch { return <span key={i}>{p.v}</span>; }
+    }
+    return <span key={i}>{p.v}</span>;
   })}</>;
 }
 
