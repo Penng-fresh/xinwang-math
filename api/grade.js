@@ -68,7 +68,8 @@ export default async function handler(req, res) {
         },
       ],
       temperature: 0.3,
-      max_tokens: 2048,
+      max_tokens: 8192,
+      thinking: { type: "disabled" }, // 禁用思维链：批改任务不需要内部推理，开启只会大量消耗token和时间
     });
 
     const choice = data?.choices?.[0];
