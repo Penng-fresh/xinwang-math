@@ -549,7 +549,7 @@ function ParentView() {
         {loading&&(<div style={{background:"#2a2218",borderRadius:14,padding:24,textAlign:"center",marginBottom:12}}>
           <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:14}}>{["#e8a030","#e06040","#c040a0","#4080e0","#40b060"].map((c,i)=>(<div key={i} style={{width:9,height:9,borderRadius:"50%",background:c,animation:"bounce 1.2s ease-in-out "+(i*0.15)+"s infinite"}}/>))}</div>
           <div style={{color:"#d0c0a0",fontSize:14,fontWeight:500,marginBottom:6}}>{loadingMsg}</div>
-          <div style={{color:"#8a7a5a",fontSize:12}}>已用时 {loadingSec} 秒，AI批改通常需要30秒~1分钟，请不要离开页面</div>
+          <div style={{color:"#8a7a5a",fontSize:12}}>已用时 {loadingSec} 秒，AI正在仔细思考解题过程，通常需要1~2分钟，请耐心等待，不要离开页面</div>
         </div>)}
         {result&&Array.isArray(result)&&(
           <div>
