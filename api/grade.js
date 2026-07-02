@@ -109,7 +109,7 @@ export default async function handler(req, res) {
       ],
       temperature: 0.3,
       max_tokens: 8192,
-      thinking: { type: "enabled" }, // 【测试用】临时开启思维链，用于验证开启后能否修复乘方括号误判、运算顺序漏检这类需要演算验证的问题，以及实际要等待多久。如果等待时间不可接受，把 "enabled" 改回 "disabled" 即可恢复原状，其他代码不受影响。
+      thinking: { type: "disabled" }, // 禁用思维链：测试发现开启后耗时接近或超过 Vercel Hobby 套餐 300 秒的硬性上限，会导致请求被强制终止报错，暂时恢复为禁用状态保证服务可用
     });
     const choice = data?.choices?.[0];
     let text = choice?.message?.content || "";
