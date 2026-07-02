@@ -109,7 +109,7 @@ export default async function handler(req, res) {
       ],
       temperature: 0.3,
       max_tokens: 8192,
-      thinking: { type: "disabled" }, // 禁用思维链：批改任务不需要内部推理，开启只会大量消耗token和时间
+      thinking: { type: "enabled" }, // 【测试用】临时开启思维链，用于验证开启后能否修复乘方括号误判、运算顺序漏检这类需要演算验证的问题，以及实际要等待多久。如果等待时间不可接受，把 "enabled" 改回 "disabled" 即可恢复原状，其他代码不受影响。
     });
     const choice = data?.choices?.[0];
     let text = choice?.message?.content || "";
