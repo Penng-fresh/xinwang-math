@@ -340,11 +340,14 @@ const SYSTEM_PROMPT = `你是一位严格但耐心的初中数学老师，能检
 
 只返回JSON，字段值不含换行符，issues为空写[]：{"problems":[{"problem_number":1,"problem_type":"题型","transcription":["第1行","第2行"],"overall":"正确","score":90,"steps_detected":["步骤"],"skipped_steps":[],"issues":[{"line":1,"type":"错误类型","content":"该行内容","description":"含原理的说明","suggestion":"正确写法"}],"praise":"","summary":"总体评价"}]}`;
 
-const storage = {
-  get: async (key) => { try { const v = localStorage.getItem(key); return v ? { value: v } : null; } catch { return null; } },
-  set: async (key, value) => { try { localStorage.setItem(key, value); return { value }; } catch { return null; } },
-  delete: async (key) => { try { localStorage.removeItem(key); return { deleted: true }; } catch { return null; } }
-};
+// 提交记录（作业照片、批改结果）现在统一存到云端数据库，由 /api/submissions.js 负责，
+// 这样彭老师在教师后台任何设备上都能看到所有家长提交的记录，不再只存在各自手机本地。
+
+// 这里只保留一个纯本地的小工具：记住"这台设备最近用过的学生姓名"，
+// 方便同一个孩子反复用同一台手机拍照时，不用每次重新打字。
+const RECENT_NAMES_KEY = "recent_student_names";
+const getRecentNames = () => { try { const v = localStorage.getItem(RECENT_NAMES_KEY); return v ? JSON.parse(v) : []; } catch { return []; } };
+const addRecentName = (name) => { if (!name) return; try { let list = getRecentNames().filter(n => n !== name); list.unshift(name); if (list.length > 5) list = list.slice(0, 5); localStorage.setItem(RECENT_NAMES_KEY, JSON.stringify(list)); } catch (_) {} };
 
 function compressImage(file) {
   return new Promise((resolve, reject) => {
@@ -437,6 +440,7 @@ function ResultPanel({ result }) {
           <div style={{fontSize:13,color:"#5a4a30",lineHeight:1.7}}><MathText>{result.summary}</MathText></div>
         </div>
       </div>
+      <div style={{fontSize:11,color:"#a08060",lineHeight:1.6,marginBottom:14,padding:"0 2px"}}>💡 以上为 AI 自动批改结果，仅供参考，不代表最终标准答案。如发现批改与实际不符，欢迎随时联系彭老师核实。</div>
       {result.transcription&&result.transcription.length>0&&(
         <div style={{background:"#faf6ee",border:"1px solid #d8c8a0",borderRadius:12,padding:"14px 18px",marginBottom:12}}>
           <div style={{fontSize:10,letterSpacing:3,color:"#8a7a5a",marginBottom:10}}>识别内容</div>
@@ -493,9 +497,12 @@ function ParentView() {
   const [saved,setSaved]=useState(false);
   const [dragOver,setDragOver]=useState(false);
   const [showTips,setShowTips]=useState(false);
+  const [recentNames,setRecentNames]=useState([]);
   const fileRef=useRef(null);
   const camRef=useRef(null);
   const msgs=["正在识别手写内容...","逐行分析解题步骤...","检查符号处理...","核查跳步情况...","AI正在仔细批改，请耐心等待..."];
+
+  useEffect(()=>{ const list=getRecentNames(); setRecentNames(list); if(list[0])setStudentName(list[0]); },[]);
 
   const processFile=async(file)=>{ if(!file||!file.type.startsWith("image/")){setError("请上传图片文件");return;} setError("正在压缩图片..."); try{const c=await compressImage(file);setImage({data:c.data,mediaType:c.mediaType});setPreview(c.preview);setResult(null);setSaved(false);setError(c.isLandscape?"⚠️ 检测到这张照片是横着拍的，文字会变成竖排，AI容易看错数字。建议删除重拍：手机竖直拿、文字方向跟平时写字一样。":"");}catch(e){setError("图片处理失败："+e.message);} };
 
@@ -514,12 +521,11 @@ function ParentView() {
       const totalIssues=problems.reduce((n,p)=>n+(p.issues||[]).length,0);
       const avgScore=Math.round(problems.reduce((n,p)=>n+(p.score||0),0)/problems.length);
       const types=problems.map(p=>p.problem_type).filter(Boolean).join("、");
-      const submission={id,timestamp:Date.now(),studentName:studentName.trim()||"未填写姓名",score:avgScore,overall:problems.some(p=>p.overall!=="正确")?"有问题":"正确",issueCount:totalIssues,problemCount:problems.length,problemTypes:types,problems,thumbnail:preview};
-      let list=[];try{const ex=await storage.get("submissions_index");if(ex)list=JSON.parse(ex.value);}catch(_){}
-      list.unshift({id,timestamp:submission.timestamp,studentName:submission.studentName,score:submission.score,overall:submission.overall,issueCount:submission.issueCount,problemCount:submission.problemCount,problemTypes:submission.problemTypes});
-      if(list.length>50)list=list.slice(0,50);
-      await storage.set("submissions_index",JSON.stringify(list));
-      await storage.set("submission_"+id,JSON.stringify(submission));
+      const finalName=studentName.trim()||"未填写姓名";
+      const submission={id,timestamp:Date.now(),studentName:finalName,score:avgScore,overall:problems.some(p=>p.overall!=="正确")?"有问题":"正确",issueCount:totalIssues,problemCount:problems.length,problemTypes:types,problems,thumbnail:preview};
+      const saveRes=await fetch("/api/submissions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({submission})});
+      if(!saveRes.ok){const d=await saveRes.json().catch(()=>({}));throw new Error("批改结果同步到后台失败："+(d?.error||saveRes.statusText)+"（批改结果仍会显示在下方，但可能未存入教师后台，请稍后重试或联系彭老师）");}
+      if(studentName.trim())addRecentName(studentName.trim());
       setSaved(true);
     }catch(e){setError(e.message);}finally{clearInterval(msgTimer);clearInterval(secTimer);setLoading(false);}
   };
@@ -535,6 +541,9 @@ function ParentView() {
         </div>
       </div>
       <div style={{padding:"20px 16px",maxWidth:680,margin:"0 auto"}}>
+        <div style={{background:"#fdf3dc",border:"1px solid #e8c870",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12.5,color:"#7a5a20",lineHeight:1.8}}>
+          ⚠️ <b>批改结果由 AI 自动生成，仅供参考，不代表最终标准答案。</b>AI 是根据规则和概率去判断解题过程，可能出现误判。如果发现批改结果和实际情况不符，欢迎随时联系彭老师核实，我会及时修正。
+        </div>
         {!preview&&(
           <div style={{marginBottom:14}}>
             <div onClick={()=>setShowTips(!showTips)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#faf6ee",border:"1px solid #d8c8a0",borderRadius:10,padding:"10px 14px",cursor:"pointer"}}>
@@ -568,7 +577,14 @@ function ParentView() {
               <img src={preview} alt="作业" style={{width:"100%",display:"block",maxHeight:340,objectFit:"contain"}}/>
               <button onClick={reset} style={{position:"absolute",top:10,right:10,background:"rgba(0,0,0,0.6)",color:"#fff",border:"none",borderRadius:20,padding:"5px 12px",fontSize:12,cursor:"pointer"}}>重新上传</button>
             </div>
-            <input value={studentName} onChange={(e)=>setStudentName(e.target.value)} placeholder="请输入学生姓名（可选）" style={{width:"100%",background:"#faf6ee",border:"1px solid #d8c8a0",borderRadius:10,padding:"10px 14px",fontSize:14,color:"#2a2218",outline:"none",boxSizing:"border-box"}}/>
+            {recentNames.length>0&&(
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                {recentNames.map(n=>(
+                  <button key={n} onClick={()=>setStudentName(n)} style={{background:studentName===n?"#e8a030":"#faf6ee",color:studentName===n?"#fff":"#6a5a3a",border:"1px solid "+(studentName===n?"#e8a030":"#d8c8a0"),borderRadius:16,padding:"5px 12px",fontSize:12.5,cursor:"pointer",fontWeight:studentName===n?600:400}}>{n}</button>
+                ))}
+              </div>
+            )}
+            <input value={studentName} onChange={(e)=>setStudentName(e.target.value)} placeholder="请输入学生姓名（首次输入后，这台设备下次会自动记住）" style={{width:"100%",background:"#faf6ee",border:"1px solid #d8c8a0",borderRadius:10,padding:"10px 14px",fontSize:14,color:"#2a2218",outline:"none",boxSizing:"border-box"}}/>
           </div>
         )}
         <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={(e)=>{if(e.target.files&&e.target.files[0])processFile(e.target.files[0]);}}/>
@@ -600,15 +616,41 @@ function ParentView() {
   );
 }
 
-function TeacherView({ onLogout }) {
+function TeacherView({ onLogout, password }) {
   const [list,setList]=useState([]);
   const [selected,setSelected]=useState(null);
   const [detail,setDetail]=useState(null);
   const [loadingDetail,setLoadingDetail]=useState(false);
+  const [listError,setListError]=useState("");
   useEffect(()=>{loadList();},[]);
-  const loadList=async()=>{try{const r=await storage.get("submissions_index");if(r)setList(JSON.parse(r.value));}catch(_){setList([]);}};
-  const loadDetail=async(id)=>{if(selected===id){setSelected(null);setDetail(null);return;}setSelected(id);setLoadingDetail(true);setDetail(null);try{const r=await storage.get("submission_"+id);if(r)setDetail(JSON.parse(r.value));}catch(_){}setLoadingDetail(false);};
-  const deleteItem=async(id,e)=>{e.stopPropagation();if(!confirm("确认删除？"))return;try{await storage.delete("submission_"+id);const newList=list.filter(x=>x.id!==id);await storage.set("submissions_index",JSON.stringify(newList));setList(newList);if(selected===id){setSelected(null);setDetail(null);}}catch(_){}};
+  const loadList=async()=>{
+    setListError("");
+    try{
+      const r=await fetch("/api/submissions?password="+encodeURIComponent(password));
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok){setListError(d?.error||"读取失败");setList([]);return;}
+      setList(d.value||[]);
+    }catch(_){setListError("网络请求失败，请检查网络后重试");setList([]);}
+  };
+  const loadDetail=async(id)=>{
+    if(selected===id){setSelected(null);setDetail(null);return;}
+    setSelected(id);setLoadingDetail(true);setDetail(null);
+    try{
+      const r=await fetch("/api/submissions?id="+encodeURIComponent(id)+"&password="+encodeURIComponent(password));
+      const d=await r.json().catch(()=>({}));
+      if(r.ok)setDetail(d.value);
+    }catch(_){}
+    setLoadingDetail(false);
+  };
+  const deleteItem=async(id,e)=>{
+    e.stopPropagation();if(!confirm("确认删除？"))return;
+    try{
+      const r=await fetch("/api/submissions",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,password})});
+      if(!r.ok){const d=await r.json().catch(()=>({}));alert("删除失败："+(d?.error||r.statusText));return;}
+      const newList=list.filter(x=>x.id!==id);setList(newList);
+      if(selected===id){setSelected(null);setDetail(null);}
+    }catch(_){alert("删除失败，请检查网络后重试");}
+  };
   return(
     <div style={{minHeight:"100vh",background:"#f5f0e8",fontFamily:"'Noto Sans SC','PingFang SC',sans-serif"}}>
       <div style={{background:"#2a2218",padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -619,6 +661,7 @@ function TeacherView({ onLogout }) {
         </div>
       </div>
       <div style={{padding:"20px 16px",maxWidth:680,margin:"0 auto"}}>
+        {listError&&<div style={{background:"#fde8e8",border:"1px solid #f0a0a0",borderRadius:10,padding:"10px 14px",color:"#a03030",fontSize:13,marginBottom:12}}>⚠ {listError}</div>}
         {list.length===0?(
           <div style={{textAlign:"center",padding:"40px 20px",color:"#8a7a5a",background:"#faf6ee",borderRadius:14,border:"1px dashed #c8b898"}}>
             <div style={{fontSize:36,marginBottom:10}}>📭</div><div style={{fontSize:14}}>暂无提交记录</div>
@@ -667,6 +710,7 @@ export default function App() {
   const [pwInput, setPwInput] = useState("");
   const [pwError, setPwError] = useState("");
   const [pwChecking, setPwChecking] = useState(false);
+  const [teacherPassword, setTeacherPassword] = useState(""); // 登录成功后保存，用于后续调用 /api/submissions 读取云端数据
 
   const handleLogin = async () => {
     setPwChecking(true);
@@ -674,7 +718,7 @@ export default function App() {
     try {
       const res = await fetch("/api/teacher-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: pwInput }) });
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data.ok) { setPage("teacher"); setPwInput(""); setPwError(""); }
+      if (res.ok && data.ok) { setTeacherPassword(pwInput); setPage("teacher"); setPwInput(""); setPwError(""); }
       else { setPwError(data.error || "密码错误，请重试"); }
     } catch (e) {
       setPwError("登录请求失败，请检查网络后重试");
@@ -699,7 +743,7 @@ export default function App() {
     </>
   );
 
-  if (page === "teacher") return <><GlobalStyle /><TeacherView onLogout={() => setPage("tool")} /></>;
+  if (page === "teacher") return <><GlobalStyle /><TeacherView password={teacherPassword} onLogout={() => { setTeacherPassword(""); setPage("tool"); }} /></>;
 
   if (page === "login") return (
     <div style={{ minHeight: "100vh", background: "#f5f0e8", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif" }}>
