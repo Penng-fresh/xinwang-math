@@ -156,6 +156,24 @@ async function callZhipu(apiKey, body, timeoutMs) {
   throw lastError;
 }
 
+// 兜底修复：不管模型自己在 JSON 里怎么写 overall/score，都用 issues 数组的
+// 真实内容强制校正一遍，保证"没有任何 issue 却不是正确/满分"这种自相矛盾
+// 的结果不会出现在最终返回给前端的数据里——这一步不依赖模型是否遵守提示词，
+// 是纯代码逻辑的最后一道保险。
+function normalizeOverallAndScore(problems) {
+  if (!Array.isArray(problems)) return problems;
+  return problems.map((p) => {
+    if (!p || typeof p !== "object") return p;
+    const hasIssues = Array.isArray(p.issues) && p.issues.length > 0;
+    if (!hasIssues) {
+      // 没有任何具体错误：必须判定为"正确"，且给满分，不允许模型自己扣分
+      return { ...p, overall: "正确", score: 100 };
+    }
+    // 有具体错误：必须判定为"有问题"，不允许模型自相矛盾地标"正确"
+    return { ...p, overall: "有问题" };
+  });
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "只支持 POST 请求" });
@@ -172,6 +190,9 @@ export default async function handler(req, res) {
   try {
     // ------------------------------------------------------------
     // 第一次调用：图片 + 不开思考，跟以前完全一样，负责识别和初步批改
+    // 给一个240秒的超时上限（留60秒余量给后续处理和可能的二次校验兜底逻辑），
+    // 避免智谱接口偶发响应缓慢时，直接把 Vercel Hobby 套餐300秒的硬上限撞穿、
+    // 报出一个前端完全不知所云的失败。
     // ------------------------------------------------------------
     const firstData = await callZhipu(apiKey, {
       model: MODEL,
@@ -188,7 +209,7 @@ export default async function handler(req, res) {
       temperature: 0.3,
       max_tokens: 8192,
       thinking: { type: "disabled" },
-    });
+    }, 240000);
     const firstChoice = firstData?.choices?.[0];
     const firstText = firstChoice?.message?.content || "";
     if (!firstText) {
@@ -205,6 +226,7 @@ export default async function handler(req, res) {
     if (!parsed || !Array.isArray(parsed.problems)) {
       return res.status(200).json({ text: repairFracBraces(firstText) });
     }
+    parsed.problems = normalizeOverallAndScore(parsed.problems);
 
     // 找出所有被判定"有问题"、需要送去二次校验的题目
     const problemsNeedingVerify = parsed.problems.filter(
@@ -276,6 +298,7 @@ export default async function handler(req, res) {
           summary: v.summary || p.summary,
         };
       });
+      parsed.problems = normalizeOverallAndScore(parsed.problems);
     }
 
     const finalText = JSON.stringify(deepRepairFracBraces(parsed));
