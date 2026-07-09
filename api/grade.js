@@ -310,6 +310,13 @@ function verifyStepTransition(prevLineText, nextLineText) {
   return { valid: false, sourceValues: sourceTerms.map(fracToString), targetValues: targetTerms.map(fracToString), repairHints };
 }
 
+function computeLineTotalString(lineText) {
+  const terms = parseTerms(lineText);
+  if (terms.length === 0) return "";
+  const total = terms.reduce((acc, t) => fracAdd(acc, t), makeFrac(0n, 1n));
+  return fracToString(total);
+}
+
 // 用上面的引擎去核对"有理数运算"题型每相邻两行之间的变换，修正 AI 的判断：
 // ①代码证明没问题 -> 撤销 AI 在这一行标的漏负号/计算错误/运算顺序类 issue
 // ②代码证明有问题、AI 也标了 -> 把 description 换成代码算出的真实情况，不用 AI 的编造演算
@@ -338,10 +345,16 @@ function codeVerifyRationalSteps(problems) {
             const hintText = result.repairHints && result.repairHints.length > 0
               ? `（可能原因：${result.repairHints.join("；")}，建议核对原始书写）`
               : "";
-            return {
-              ...it,
-              description: `经代码逐项核算：上一行的数字（${(result.sourceValues || []).join("、")}）无论怎样分组相加减，都无法得到这一行写出的结果（${(result.targetValues || []).join("、")}）。${hintText}`,
-            };
+            const honestDescription = `经代码逐项核算：上一行的数字（${(result.sourceValues || []).join("、")}）无论怎样分组相加减，都无法得到这一行写出的结果（${(result.targetValues || []).join("、")}）。${hintText}`;
+            // suggestion 字段也一并接管，不能只换 description——之前发现 AI 会在 suggestion
+            // 里继续编造一套"正确演算"，而且这套演算本身还可能漏项/算错（比如三项只加了两项）。
+            // 这里不去猜"学生原本想怎么分组"，只诚实地给出上一行全部项相加的总和作为参考，
+            // 这个总和是代码精确算出来的，不存在编造或漏项的风险。
+            const totalSum = (result.sourceValues || []).length > 0 ? computeLineTotalString(lines[i]) : "";
+            const honestSuggestion = totalSum
+              ? `代码核算：上一行这几个数字全部相加的准确结果是 ${totalSum}，可以用这个数核对一下这一步到底应该分组算出什么。${hintText}`
+              : honestDescription;
+            return { ...it, description: honestDescription, suggestion: honestSuggestion };
           }
           return it;
         });
