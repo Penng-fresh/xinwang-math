@@ -330,6 +330,7 @@ function codeVerifyRationalSteps(problems) {
     const lines = Array.isArray(p.transcription) ? p.transcription : [];
     if (lines.length < 2) return p;
     let issues = Array.isArray(p.issues) ? p.issues.slice() : [];
+    const touchedLines = new Set(); // 记录哪些行是代码接管、重写过描述的
     for (let i = 0; i < lines.length - 1; i++) {
       const lineNum = i + 2; // transcription[i+1] 对应显示的"第(i+2)行"
       const result = verifyStepTransition(lines[i], lines[i + 1]);
@@ -342,6 +343,7 @@ function codeVerifyRationalSteps(problems) {
         // 不再保留 AI 自己编的那套演算说辞
         issues = issues.map((it) => {
           if (it && it.line === lineNum && RELEVANT_TYPE_RE.test(it.type || "")) {
+            touchedLines.add(lineNum);
             const hintText = result.repairHints && result.repairHints.length > 0
               ? `（可能原因：${result.repairHints.join("；")}，建议核对原始书写）`
               : "";
@@ -360,7 +362,19 @@ function codeVerifyRationalSteps(problems) {
         });
       }
     }
-    return { ...p, issues };
+    let result = { ...p, issues };
+    // summary 字段（题目最上方那句总结）AI 也会自由发挥，同样可能编造未经证实的说法
+    // （比如"最终结果虽凑巧正确"——这个"凑巧"本身就是编的，代码根本没法判断是不是巧合）。
+    // 如果这道题剩下的 issues 全部都是代码接管过的，就把 summary 也换成中性、不带推测
+    // 的版本；如果还有代码管不到的其他类型问题掺在里面，保留原 summary，避免顾此失彼。
+    const remainingLineNums = issues.filter((it) => it && RELEVANT_TYPE_RE.test(it.type || "")).map((it) => it.line);
+    const allTouched = remainingLineNums.length > 0 && remainingLineNums.every((ln) => touchedLines.has(ln));
+    if (issues.length === 0) {
+      result.summary = "解题过程规范，未发现问题。";
+    } else if (allTouched) {
+      result.summary = `第${[...touchedLines].sort((a, b) => a - b).join("、")}行的计算结果和上一行的数字对不上，具体原因请看下方"错误详情"（可能是识别数字有误，也可能是计算本身有误，暂无法完全确定）。`;
+    }
+    return result;
   });
 }
 
@@ -374,8 +388,9 @@ function normalizeOverallAndScore(problems) {
     if (!p || typeof p !== "object") return p;
     const hasIssues = Array.isArray(p.issues) && p.issues.length > 0;
     if (!hasIssues) {
-      // 没有任何具体错误：必须判定为"正确"，且给满分，不允许模型自己扣分
-      return { ...p, overall: "正确", score: 100 };
+      // 没有任何具体错误：必须判定为"正确"，且给满分，不允许模型自己扣分；
+      // summary 也统一换成干净的肯定表述，不管 AI 原来写了什么"但/仍需注意"之类的话。
+      return { ...p, overall: "正确", score: 100, summary: "解题过程规范，未发现问题。" };
     }
     // 有具体错误：必须判定为"有问题"，不允许模型自相矛盾地标"正确"
     return { ...p, overall: "有问题" };
