@@ -157,6 +157,200 @@ async function callZhipu(apiKey, body, timeoutMs) {
   throw lastError;
 }
 
+// ============================================================
+// 【方案B】有理数运算「移项归类/分组求和」步骤的代码级验证引擎
+// 不再让 AI 自己"演算"来判断某一步的多项合并对不对——那本质上是精确的
+// 数学问题，AI 越想把演算写得详细，越容易一本正经地编出看起来合理、
+// 实际上是编造的错误说明。这里改用穷举法做精确验证：
+//   1. 把每一行解析成一串"带符号的数"；
+//   2. 判断上一行的所有项，能不能通过某种分组（每一项完整参与、不拆
+//      分、不凭空引入数字）相加减，得到下一行写出的这几个数字；
+//   3. 如果对不上，检查是不是"改一位形近数字（如3/9、1/7）"就能对上——
+//      如果是，只作为客观线索附带说明，绝不自动判定为"没问题"，因为
+//      实测发现分母较小时纯属巧合也可能凑对，必须避免把学生真实的
+//      计算错误也放过。
+// 这套引擎只负责两件事：①证明某一步确实没问题时，撤销 AI 关于这一步的
+// 误判；②AI 本来就判定这一步有问题时，把描述换成代码算出来的真实情况，
+// 不再让 AI 自己编演算过程。它不会凭空新增 AI 完全没提到的错误。
+// ============================================================
+function gcdBig(a, b) {
+  a = a < 0n ? -a : a; b = b < 0n ? -b : b;
+  while (b) { [a, b] = [b, a % b]; }
+  return a === 0n ? 1n : a;
+}
+function makeFrac(n, d) {
+  if (d < 0n) { n = -n; d = -d; }
+  const g = gcdBig(n, d);
+  return { n: n / g, d: d / g };
+}
+function fracAdd(a, b) { return makeFrac(a.n * b.d + b.n * a.d, a.d * b.d); }
+function fracKey(a) { return a.n.toString() + "/" + a.d.toString(); }
+function fracToString(a) {
+  const neg = a.n < 0n;
+  const absN = neg ? -a.n : a.n;
+  const whole = absN / a.d;
+  const rem = absN % a.d;
+  let s = neg ? "-" : "";
+  if (whole !== 0n) s += whole.toString();
+  if (rem !== 0n) s += (whole !== 0n ? " " : "") + rem.toString() + "/" + a.d.toString();
+  if (whole === 0n && rem === 0n) s += "0";
+  return s;
+}
+function preprocessLine(line) {
+  if (typeof line !== "string") return "";
+  let s = line;
+  s = s.replace(/\$/g, "");
+  s = s.replace(/(\d)\\frac\{(-?\d+)\}\{(-?\d+)\}/g, "$1 $2/$3");
+  s = s.replace(/\\frac\{(-?\d+)\}\{(-?\d+)\}/g, "$1/$2");
+  s = s.replace(/又/g, " ");
+  s = s.replace(/\\(?!frac)/g, " ");
+  s = s.replace(/[（）]/g, (m) => (m === "（" ? "(" : ")"));
+  return s;
+}
+function parseTerms(rawLine) {
+  const s = preprocessLine(rawLine);
+  const re = /([+-])?\s*\(?\s*([+-])?\s*(?:(\d+)\s+(\d+)\/(\d+)|(\d+)\/(\d+)|(\d+))\s*\)?/g;
+  const terms = [];
+  let m;
+  while ((m = re.exec(s)) !== null) {
+    if (m[0].trim() === "") { if (re.lastIndex === m.index) re.lastIndex++; continue; }
+    const outerSign = m[1] === "-" ? -1n : 1n;
+    const innerSign = m[2] === "-" ? -1n : 1n;
+    let frac;
+    if (m[3] !== undefined) {
+      const whole = BigInt(m[3]), num = BigInt(m[4]), den = BigInt(m[5]);
+      frac = makeFrac(whole * den + num, den);
+    } else if (m[6] !== undefined) {
+      frac = makeFrac(BigInt(m[6]), BigInt(m[7]));
+    } else if (m[8] !== undefined) {
+      frac = makeFrac(BigInt(m[8]), 1n);
+    } else { continue; }
+    const sign = outerSign * innerSign;
+    frac = makeFrac(sign * frac.n, frac.d);
+    terms.push(frac);
+  }
+  return terms;
+}
+function partitionsIntoK(n, k) {
+  const results = [];
+  const assignment = new Array(n).fill(-1);
+  function backtrack(i, groupsUsed) {
+    if (i === n) { if (groupsUsed === k) { const groups = Array.from({ length: k }, () => []); assignment.forEach((g, idx) => groups[g].push(idx)); results.push(groups); } return; }
+    for (let g = 0; g < groupsUsed; g++) { assignment[i] = g; backtrack(i + 1, groupsUsed); }
+    if (groupsUsed < k) { assignment[i] = groupsUsed; backtrack(i + 1, groupsUsed + 1); }
+    assignment[i] = -1;
+  }
+  backtrack(0, 0);
+  return results;
+}
+function checkPartitionMatch(sourceTerms, targetTerms) {
+  const n = sourceTerms.length, k = targetTerms.length;
+  if (k === 0 || n === 0 || k > n) return null;
+  const targetKeys = targetTerms.map(fracKey).sort();
+  const partitions = partitionsIntoK(n, k);
+  for (const groups of partitions) {
+    const sums = groups.map((idxs) => idxs.reduce((acc, idx) => fracAdd(acc, sourceTerms[idx]), makeFrac(0n, 1n)));
+    const sumKeys = sums.map(fracKey).sort();
+    if (sumKeys.length === targetKeys.length && sumKeys.every((v, i) => v === targetKeys[i])) return groups;
+  }
+  return null;
+}
+const CONFUSE = { "3": "9", "9": "3", "1": "7", "7": "1", "6": "8", "8": "6", "0": "8", "5": "6" };
+function digitVariants(str) {
+  const variants = [];
+  for (let i = 0; i < str.length; i++) { const c = str[i]; if (CONFUSE[c]) variants.push(str.slice(0, i) + CONFUSE[c] + str.slice(i + 1)); }
+  return variants;
+}
+function singleDigitRepairCandidates(fracList) {
+  const candidates = [];
+  for (let i = 0; i < fracList.length; i++) {
+    const f = fracList[i];
+    const neg = f.n < 0n;
+    const absN = neg ? -f.n : f.n;
+    const whole = absN / f.d, rem = absN % f.d;
+    for (const v of digitVariants(whole.toString())) {
+      const newAbsN = BigInt(v) * f.d + rem;
+      candidates.push({ index: i, field: "整数部分", from: whole.toString(), to: v, newFrac: makeFrac(neg ? -newAbsN : newAbsN, f.d) });
+    }
+    if (rem !== 0n) {
+      for (const v of digitVariants(rem.toString())) {
+        const newAbsN = whole * f.d + BigInt(v);
+        candidates.push({ index: i, field: "分子", from: rem.toString(), to: v, newFrac: makeFrac(neg ? -newAbsN : newAbsN, f.d) });
+      }
+    }
+    if (f.d !== 1n) {
+      for (const v of digitVariants(f.d.toString())) {
+        const newDen = BigInt(v); if (newDen === 0n) continue;
+        const newAbsN = whole * newDen + rem;
+        candidates.push({ index: i, field: "分母", from: f.d.toString(), to: v, newFrac: makeFrac(neg ? -newAbsN : newAbsN, newDen) });
+      }
+    }
+  }
+  return candidates;
+}
+function verifyStepTransition(prevLineText, nextLineText) {
+  const sourceTerms = parseTerms(prevLineText);
+  const targetTerms = parseTerms(nextLineText);
+  if (sourceTerms.length === 0 || targetTerms.length === 0) return { valid: null };
+  if (checkPartitionMatch(sourceTerms, targetTerms)) return { valid: true };
+  const repairHints = [];
+  const collect = (terms, otherTerms, whichSide) => {
+    for (const c of singleDigitRepairCandidates(terms)) {
+      const repairedList = terms.slice();
+      repairedList[c.index] = c.newFrac;
+      const match = whichSide === "source" ? checkPartitionMatch(repairedList, otherTerms) : checkPartitionMatch(otherTerms, repairedList);
+      if (match) {
+        repairHints.push((whichSide === "source" ? "上一行" : "下一行") + `第${c.index + 1}个数的${c.field}如果是"${c.to}"而不是"${c.from}"，这一步就能对上`);
+        if (repairHints.length >= 3) return;
+      }
+    }
+  };
+  collect(targetTerms, sourceTerms, "target");
+  if (repairHints.length < 3) collect(sourceTerms, targetTerms, "source");
+  return { valid: false, sourceValues: sourceTerms.map(fracToString), targetValues: targetTerms.map(fracToString), repairHints };
+}
+
+// 用上面的引擎去核对"有理数运算"题型每相邻两行之间的变换，修正 AI 的判断：
+// ①代码证明没问题 -> 撤销 AI 在这一行标的漏负号/计算错误/运算顺序类 issue
+// ②代码证明有问题、AI 也标了 -> 把 description 换成代码算出的真实情况，不用 AI 的编造演算
+// ③代码判断不了（解析失败）或 AI 根本没标 -> 不动，维持原状，不额外新增判断
+function codeVerifyRationalSteps(problems) {
+  if (!Array.isArray(problems)) return problems;
+  const RELEVANT_TYPE_RE = /漏负号|计算错误|运算顺序/;
+  return problems.map((p) => {
+    if (!p || typeof p !== "object") return p;
+    if (!p.problem_type || !String(p.problem_type).includes("有理数")) return p;
+    const lines = Array.isArray(p.transcription) ? p.transcription : [];
+    if (lines.length < 2) return p;
+    let issues = Array.isArray(p.issues) ? p.issues.slice() : [];
+    for (let i = 0; i < lines.length - 1; i++) {
+      const lineNum = i + 2; // transcription[i+1] 对应显示的"第(i+2)行"
+      const result = verifyStepTransition(lines[i], lines[i + 1]);
+      if (result.valid === null) continue; // 代码解析不了，不做任何改动
+      if (result.valid === true) {
+        // 代码证明这一步没问题：撤销这一行相关类型的误判
+        issues = issues.filter((it) => !(it && it.line === lineNum && RELEVANT_TYPE_RE.test(it.type || "")));
+      } else {
+        // 代码证明这一步确实对不上：如果 AI 已经标了，用代码算出的真实情况替换描述，
+        // 不再保留 AI 自己编的那套演算说辞
+        issues = issues.map((it) => {
+          if (it && it.line === lineNum && RELEVANT_TYPE_RE.test(it.type || "")) {
+            const hintText = result.repairHints && result.repairHints.length > 0
+              ? `（可能原因：${result.repairHints.join("；")}，建议核对原始书写）`
+              : "";
+            return {
+              ...it,
+              description: `经代码逐项核算：上一行的数字（${(result.sourceValues || []).join("、")}）无论怎样分组相加减，都无法得到这一行写出的结果（${(result.targetValues || []).join("、")}）。${hintText}`,
+            };
+          }
+          return it;
+        });
+      }
+    }
+    return { ...p, issues };
+  });
+}
+
 // 兜底修复：不管模型自己在 JSON 里怎么写 overall/score，都用 issues 数组的
 // 真实内容强制校正一遍，保证"没有任何 issue 却不是正确/满分"这种自相矛盾
 // 的结果不会出现在最终返回给前端的数据里——这一步不依赖模型是否遵守提示词，
@@ -227,6 +421,12 @@ export default async function handler(req, res) {
     if (!parsed || !Array.isArray(parsed.problems)) {
       return res.status(200).json({ text: repairFracBraces(firstText) });
     }
+    parsed.problems = normalizeOverallAndScore(parsed.problems);
+    // 【方案B】用代码对"有理数运算"题型的每一步做穷举验算，撤销证明是误判的
+    // issue、把无法证伪的 issue 描述换成代码算出的真实情况——这一步跑在决定
+    // 要不要送二次AI校验之前，如果代码已经把某道题唯一的 issue 撤销了，
+    // 这道题就不会再被送去做又慢又不一定可靠的"思考模式"复核，一举两得。
+    parsed.problems = codeVerifyRationalSteps(parsed.problems);
     parsed.problems = normalizeOverallAndScore(parsed.problems);
 
     // 找出所有被判定"有问题"、需要送去二次校验的题目
@@ -299,6 +499,7 @@ export default async function handler(req, res) {
           summary: v.summary || p.summary,
         };
       });
+      parsed.problems = codeVerifyRationalSteps(parsed.problems);
       parsed.problems = normalizeOverallAndScore(parsed.problems);
     }
 
