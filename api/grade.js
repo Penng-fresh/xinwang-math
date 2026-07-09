@@ -363,13 +363,24 @@ function codeVerifyRationalSteps(problems) {
       }
     }
     let result = { ...p, issues };
+    // 去重：AI 有时会把同一处问题用两个不同的分类标签各报一遍（比如同一行
+    // 既标了"漏负号"又标了"运算顺序错误"），代码校验会把两条描述都换成
+    // 一样的诚实版本，但如果不去重，"发现X处问题"就会把同一个错误数两遍。
+    // 这里对代码接管过的行做去重：同一行只保留第一条。
+    const seenTouchedLines = new Set();
+    result.issues = result.issues.filter((it) => {
+      if (!it || !RELEVANT_TYPE_RE.test(it.type || "") || !touchedLines.has(it.line)) return true; // 非代码接管范围，不处理
+      if (seenTouchedLines.has(it.line)) return false; // 同一行已经保留过一条了，这条是重复的，丢弃
+      seenTouchedLines.add(it.line);
+      return true;
+    });
     // summary 字段（题目最上方那句总结）AI 也会自由发挥，同样可能编造未经证实的说法
     // （比如"最终结果虽凑巧正确"——这个"凑巧"本身就是编的，代码根本没法判断是不是巧合）。
     // 如果这道题剩下的 issues 全部都是代码接管过的，就把 summary 也换成中性、不带推测
     // 的版本；如果还有代码管不到的其他类型问题掺在里面，保留原 summary，避免顾此失彼。
-    const remainingLineNums = issues.filter((it) => it && RELEVANT_TYPE_RE.test(it.type || "")).map((it) => it.line);
+    const remainingLineNums = result.issues.filter((it) => it && RELEVANT_TYPE_RE.test(it.type || "")).map((it) => it.line);
     const allTouched = remainingLineNums.length > 0 && remainingLineNums.every((ln) => touchedLines.has(ln));
-    if (issues.length === 0) {
+    if (result.issues.length === 0) {
       result.summary = "解题过程规范，未发现问题。";
     } else if (allTouched) {
       result.summary = `第${[...touchedLines].sort((a, b) => a - b).join("、")}行的计算结果和上一行的数字对不上，具体原因请看下方"错误详情"（可能是识别数字有误，也可能是计算本身有误，暂无法完全确定）。`;
