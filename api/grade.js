@@ -449,6 +449,11 @@ export default async function handler(req, res) {
     if (!parsed || !Array.isArray(parsed.problems)) {
       return res.status(200).json({ text: repairFracBraces(firstText) });
     }
+    // 把"\frac{分子}{分母"缺失收尾花括号"这种 AI 常见的 LaTeX 输出瑕疵，提前在这里
+    // 修复好，而不是像以前那样只在最后返回前才修——因为下面的代码验算引擎需要
+    // 正确闭合的 \frac{}{} 才能把每一行精确解析成数字，如果留着缺陷跑代码校验，
+    // 会把"4\frac{2}{9"这种残缺文本拆解成好几个不相关的独立数字，产生新的误判。
+    Object.assign(parsed, deepRepairFracBraces(parsed));
     parsed.problems = normalizeOverallAndScore(parsed.problems);
     // 【方案B】用代码对"有理数运算"题型的每一步做穷举验算，撤销证明是误判的
     // issue、把无法证伪的 issue 描述换成代码算出的真实情况——这一步跑在决定
