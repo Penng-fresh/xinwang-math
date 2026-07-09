@@ -539,7 +539,10 @@ function ParentView() {
       if(!saveRes.ok){const d=await saveRes.json().catch(()=>({}));throw new Error("批改结果同步到后台失败："+(d?.error||saveRes.statusText)+"（批改结果仍会显示在下方，但可能未存入教师后台，请稍后重试或联系彭老师）");}
       if(studentName.trim())addRecentName(studentName.trim());
       setSaved(true);
-    }catch(e){setError(e.message);}finally{clearInterval(msgTimer);clearInterval(secTimer);setLoading(false);}
+    }catch(e){
+      const isNetworkError = /Load failed|Failed to fetch|NetworkError|network error/i.test(e.message||"");
+      setError(isNetworkError ? "网络连接中断了，可能是等待批改的时间太长、或者当时网络信号不稳定导致的（不是这道题本身有问题）。建议检查一下网络（换成WiFi更稳），然后重新点一次批改。" : e.message);
+    }finally{clearInterval(msgTimer);clearInterval(secTimer);setLoading(false);}
   };
 
   const reset=()=>{setPreview(null);setImage(null);setResult(null);setSaved(false);setError("");};
