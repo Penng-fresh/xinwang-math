@@ -102,16 +102,47 @@ function deepRepairFracBraces(value) {
 
 // 从模型返回的原始文字里，尽量稳健地提取出 JSON 对象。
 // 模型有时会在 JSON 前后多加说明文字或代码块围栏，这里做兼容处理。
+// 如果直接 JSON.parse 失败（常见于 AI 在字符串里写了没有正确转义的引号/反斜杠，
+// 混合运算这类结构复杂的题目更容易出现），再用一次"逐字符修复转义"的方式抢救一遍——
+// 这段修复逻辑跟前端 App.jsx 里 parseResult 函数的第二层修复完全对应，只是挪到
+// 后端来，这样"能不能救回一次完整的验算流程"就不再完全依赖前端那个正则兜底解析器
+// （前端那个解析器解析不了 issues 这种对象数组，只能被迫留空，导致分数、总评还在，
+// issues 却是空的这种自相矛盾的结果）。
+function repairJsonEscaping(js) {
+  let out = "", inStr = false, esc = false;
+  for (let i = 0; i < js.length; i++) {
+    const c = js[i], code = c.charCodeAt(0);
+    if (esc) { out += c; esc = false; continue; }
+    if (c === "\\" && inStr) { esc = true; out += c; continue; }
+    if (c === '"') {
+      if (!inStr) { inStr = true; out += c; continue; }
+      let j = i + 1;
+      while (j < js.length && " \t\n\r".includes(js[j])) j++;
+      const nx = js[j];
+      if (nx === ":" || nx === "," || nx === "}" || nx === "]" || j >= js.length) { inStr = false; out += c; }
+      else { out += '\\"'; }
+      continue;
+    }
+    if (inStr && code < 32) { if (code === 10) { out += "\\n"; continue; } if (code === 13) { out += "\\r"; continue; } if (code === 9) { out += "\\t"; continue; } continue; }
+    out += c;
+  }
+  return out;
+}
 function extractJson(text) {
   if (typeof text !== "string") return null;
   let cleaned = text.replace(/```json/gi, "").replace(/```/g, "").trim();
   const start = cleaned.indexOf("{");
   const end = cleaned.lastIndexOf("}");
   if (start === -1 || end === -1 || end <= start) return null;
+  const js = cleaned.slice(start, end + 1);
   try {
-    return JSON.parse(cleaned.slice(start, end + 1));
+    return JSON.parse(js);
   } catch {
-    return null;
+    try {
+      return JSON.parse(repairJsonEscaping(js));
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -487,15 +518,22 @@ export default async function handler(req, res) {
     const wasTruncated = firstChoice?.finish_reason === "length";
 
     const parsed = extractJson(firstText);
-    // 如果第一次结果没法解析成 JSON，没办法做结构化校验，
-    // 退回到"只做花括号文本修复、跳过第二次校验"的兜底路径，保证至少不报错。
+    // 如果连修复后都没法解析成 JSON，说明这次 AI 输出的格式问题比较严重，
+    // 不能再像以前那样把这份未经任何验算、未经二次校验的原始文字直接甩给前端——
+    // 那样会导致 Plan B 验算引擎、normalizeOverallAndScore 这道"没issue就必须
+    // 满分"的保险、二次AI校验全部被绕过，前端只能靠一个很脆弱的正则兜底解析器
+    // 去硬抠，抠不出 issues 这种对象数组，就会出现"有分数、有总评，却没有任何
+    // issue"这种自相矛盾的结果。与其让半成品蒙混过关，不如明确报错，请家长
+    // 重新拍一次——这比一份看似正常、实则数据不一致的结果更安全。
     if (!parsed || !Array.isArray(parsed.problems)) {
       if (wasTruncated) {
         return res.status(502).json({
           error: "本次识别的题目较多，AI 输出在中途被截断导致无法解析，请尝试拍摄更少题目的照片，或分多次上传",
         });
       }
-      return res.status(200).json({ text: repairFracBraces(firstText) });
+      return res.status(502).json({
+        error: "AI 返回的批改结果格式异常，暂时无法解析，请重新拍照提交一次试试",
+      });
     }
 
     // ------------------------------------------------------------
