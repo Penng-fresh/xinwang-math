@@ -526,9 +526,11 @@ function ParentView() {
       const res=await fetch("/api/grade",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageData:image.data,mediaType:image.mediaType,systemPrompt:SYSTEM_PROMPT,userPrompt:"请识别图片中学生的计算题解题过程，判断题型，检查错误，只返回JSON。"})});
       if(!res.ok){const d=await res.json().catch(()=>({}));const dbg=d?.debugRaw?("\n[调试信息]"+d.debugRaw):"";throw new Error("批改服务出错："+(d?.error||res.statusText)+dbg);}
       const data=await res.json();
+      if(data.error){throw new Error(data.error);} // 状态码200但业务上仍算失败的情况（如"检测到多道题目"提示）也要在这里被捕获
       const text=data.text||"";
       const problems=parseMultiResult(text);
       setResult(problems);
+      if(data.warning){setError(data.warning);} // 非阻断性提示（如输出可能被截断），批改结果仍正常展示在下方
       const id=Date.now().toString();
       const totalIssues=problems.reduce((n,p)=>n+(p.issues||[]).length,0);
       const avgScore=Math.round(problems.reduce((n,p)=>n+(p.score||0),0)/problems.length);
