@@ -320,7 +320,9 @@ function computeLineTotalString(lineText) {
 // 用上面的引擎去核对"有理数运算"题型每相邻两行之间的变换，修正 AI 的判断：
 // ①代码证明没问题 -> 撤销 AI 在这一行标的漏负号/计算错误/运算顺序类 issue
 // ②代码证明有问题、AI 也标了 -> 把 description 换成代码算出的真实情况，不用 AI 的编造演算
-// ③代码判断不了（解析失败）或 AI 根本没标 -> 不动，维持原状，不额外新增判断
+// ③代码证明有问题、但 AI 完全没标（漏检）-> 由代码主动新增一条 issue，不能因为 AI
+//    没发现就放过一个已经被代码精确验证过的真实计算错误
+// ④代码判断不了（解析失败）-> 不动，维持原状，不额外新增判断
 function codeVerifyRationalSteps(problems) {
   if (!Array.isArray(problems)) return problems;
   const RELEVANT_TYPE_RE = /漏负号|计算错误|运算顺序/;
@@ -330,36 +332,53 @@ function codeVerifyRationalSteps(problems) {
     const lines = Array.isArray(p.transcription) ? p.transcription : [];
     if (lines.length < 2) return p;
     let issues = Array.isArray(p.issues) ? p.issues.slice() : [];
-    const touchedLines = new Set(); // 记录哪些行是代码接管、重写过描述的
+    const touchedLines = new Set(); // 记录哪些行是代码接管、重写过描述的（含代码新增的）
     for (let i = 0; i < lines.length - 1; i++) {
       const lineNum = i + 2; // transcription[i+1] 对应显示的"第(i+2)行"
       const result = verifyStepTransition(lines[i], lines[i + 1]);
       if (result.valid === null) continue; // 代码解析不了，不做任何改动
+      const existingOnLine = issues.filter(
+        (it) => it && it.line === lineNum && RELEVANT_TYPE_RE.test(it.type || "")
+      );
       if (result.valid === true) {
         // 代码证明这一步没问题：撤销这一行相关类型的误判
         issues = issues.filter((it) => !(it && it.line === lineNum && RELEVANT_TYPE_RE.test(it.type || "")));
       } else {
-        // 代码证明这一步确实对不上：如果 AI 已经标了，用代码算出的真实情况替换描述，
-        // 不再保留 AI 自己编的那套演算说辞
-        issues = issues.map((it) => {
-          if (it && it.line === lineNum && RELEVANT_TYPE_RE.test(it.type || "")) {
-            touchedLines.add(lineNum);
-            const hintText = result.repairHints && result.repairHints.length > 0
-              ? `（可能原因：${result.repairHints.join("；")}，建议核对原始书写）`
-              : "";
-            const honestDescription = `经代码逐项核算：上一行的数字（${(result.sourceValues || []).join("、")}）无论怎样分组相加减，都无法得到这一行写出的结果（${(result.targetValues || []).join("、")}）。${hintText}`;
-            // suggestion 字段也一并接管，不能只换 description——之前发现 AI 会在 suggestion
-            // 里继续编造一套"正确演算"，而且这套演算本身还可能漏项/算错（比如三项只加了两项）。
-            // 这里不去猜"学生原本想怎么分组"，只诚实地给出上一行全部项相加的总和作为参考，
-            // 这个总和是代码精确算出来的，不存在编造或漏项的风险。
-            const totalSum = (result.sourceValues || []).length > 0 ? computeLineTotalString(lines[i]) : "";
-            const honestSuggestion = totalSum
-              ? `代码核算：上一行这几个数字全部相加的准确结果是 ${totalSum}，可以用这个数核对一下这一步到底应该分组算出什么。${hintText}`
-              : honestDescription;
-            return { ...it, description: honestDescription, suggestion: honestSuggestion };
-          }
-          return it;
-        });
+        // 代码证明这一步确实对不上
+        const hintText = result.repairHints && result.repairHints.length > 0
+          ? `（可能原因：${result.repairHints.join("；")}，建议核对原始书写）`
+          : "";
+        const honestDescription = `经代码逐项核算：上一行的数字（${(result.sourceValues || []).join("、")}）无论怎样分组相加减，都无法得到这一行写出的结果（${(result.targetValues || []).join("、")}）。${hintText}`;
+        const totalSum = (result.sourceValues || []).length > 0 ? computeLineTotalString(lines[i]) : "";
+        const honestSuggestion = totalSum
+          ? `代码核算：上一行这几个数字全部相加的准确结果是 ${totalSum}，可以用这个数核对一下这一步到底应该分组算出什么。${hintText}`
+          : honestDescription;
+        touchedLines.add(lineNum);
+        if (existingOnLine.length > 0) {
+          // AI 已经标了这一行有问题：用代码算出的真实情况替换描述，
+          // 不再保留 AI 自己编的那套演算说辞。suggestion 字段也一并接管，
+          // 不能只换 description——之前发现 AI 会在 suggestion 里继续编造
+          // 一套"正确演算"，而且这套演算本身还可能漏项/算错。
+          issues = issues.map((it) => {
+            if (it && it.line === lineNum && RELEVANT_TYPE_RE.test(it.type || "")) {
+              return { ...it, description: honestDescription, suggestion: honestSuggestion };
+            }
+            return it;
+          });
+        } else {
+          // 【关键修复】AI 完全没发现这一行有问题（issues 里根本没有这一行的记录），
+          // 但代码已经精确验算出对不上——这种情况绝不能放过，必须由代码主动
+          // 新增一条 issue，否则就会出现"计算实际算错了，却因为 AI 一开始没看出来、
+          // 而永远没有任何一层校验去核实"的漏洞（这正是本次导致 -17+27 被误判为
+          // -10 却给了满分的根本原因）。
+          issues.push({
+            line: lineNum,
+            type: "计算错误",
+            content: lines[i + 1],
+            description: honestDescription,
+            suggestion: honestSuggestion,
+          });
+        }
       }
     }
     let result = { ...p, issues };
@@ -427,6 +446,11 @@ export default async function handler(req, res) {
     // 给一个240秒的超时上限（留60秒余量给后续处理和可能的二次校验兜底逻辑），
     // 避免智谱接口偶发响应缓慢时，直接把 Vercel Hobby 套餐300秒的硬上限撞穿、
     // 报出一个前端完全不知所云的失败。
+    // max_tokens 从原先的 8192 调大到 16384：如果一次上传的照片里题目较多
+    // （比如一整页七八道题，每道题都要输出逐行 transcription + issues），
+    // 8192 很容易在写到中间某道题时就被截断，而 extractJson 用
+    // lastIndexOf("}") 去找收尾括号，截断后的文本仍可能拼出一个"看起来
+    // 完整"但其实只包含前几道题的 JSON，导致后面的题目被无声地漏掉。
     // ------------------------------------------------------------
     const firstData = await callZhipu(apiKey, {
       model: MODEL,
@@ -441,7 +465,7 @@ export default async function handler(req, res) {
         },
       ],
       temperature: 0.3,
-      max_tokens: 8192,
+      max_tokens: 16384,
       thinking: { type: "disabled" },
     }, 240000);
     const firstChoice = firstData?.choices?.[0];
@@ -454,12 +478,42 @@ export default async function handler(req, res) {
       });
     }
 
+    // 【截断检测】如果模型是因为撞到 max_tokens 上限而被迫中断输出
+    // （finish_reason === "length"），说明这次返回的 JSON 大概率是不完整的——
+    // 可能刚好在某道题写到一半就被切断，也可能表面上拼出了完整 JSON、
+    // 实际上少了后面的题目。这种情况不能当作正常结果直接返回给前端，
+    // 否则家长和老师看到的会是一份"看起来没问题、实际上被悄悄截断"的批改，
+    // 比直接报错更危险。
+    const wasTruncated = firstChoice?.finish_reason === "length";
+
     const parsed = extractJson(firstText);
     // 如果第一次结果没法解析成 JSON，没办法做结构化校验，
     // 退回到"只做花括号文本修复、跳过第二次校验"的兜底路径，保证至少不报错。
     if (!parsed || !Array.isArray(parsed.problems)) {
+      if (wasTruncated) {
+        return res.status(502).json({
+          error: "本次识别的题目较多，AI 输出在中途被截断导致无法解析，请尝试拍摄更少题目的照片，或分多次上传",
+        });
+      }
       return res.status(200).json({ text: repairFracBraces(firstText) });
     }
+
+    // ------------------------------------------------------------
+    // 【一次一题】产品层面已明确要求学生每次只拍一道自己拿不准的题，
+    // 不再支持"一整页多道题"一起批改——多题挤在一张照片里，每道题分到
+    // 的像素会骤降，OCR 更容易认错手写的正负号等细节，识别质量下降的
+    // 同时批改复杂度还会累积升高，两者叠加导致体验和准确度都打折扣。
+    // 这里加一道"门槛"：一旦识别出题目数量大于 1，直接提示学生重新
+    // 只拍一题，不再往下走多题批改流程——下面的验算引擎、二次校验、
+    // 去重等逻辑完全不用改动，因为走到这里时题目数量必然是 1。
+    // ------------------------------------------------------------
+    if (parsed.problems.length > 1) {
+      return res.status(200).json({
+        error: "检测到这张照片里有多道题目。为了保证批改的准确度，请每次只拍一道题上传哦～",
+        multipleDetected: true,
+      });
+    }
+
     // 把"\frac{分子}{分母"缺失收尾花括号"这种 AI 常见的 LaTeX 输出瑕疵，提前在这里
     // 修复好，而不是像以前那样只在最后返回前才修——因为下面的代码验算引擎需要
     // 正确闭合的 \frac{}{} 才能把每一行精确解析成数字，如果留着缺陷跑代码校验，
@@ -467,9 +521,9 @@ export default async function handler(req, res) {
     Object.assign(parsed, deepRepairFracBraces(parsed));
     parsed.problems = normalizeOverallAndScore(parsed.problems);
     // 【方案B】用代码对"有理数运算"题型的每一步做穷举验算，撤销证明是误判的
-    // issue、把无法证伪的 issue 描述换成代码算出的真实情况——这一步跑在决定
-    // 要不要送二次AI校验之前，如果代码已经把某道题唯一的 issue 撤销了，
-    // 这道题就不会再被送去做又慢又不一定可靠的"思考模式"复核，一举两得。
+    // issue、把无法证伪的 issue 描述换成代码算出的真实情况、并对 AI 完全漏检的
+    // 真实计算错误主动补上 issue——这一步跑在决定要不要送二次AI校验之前，
+    // 如果代码发现了新的真实问题，这道题也会被正常送去二次校验兜底。
     parsed.problems = codeVerifyRationalSteps(parsed.problems);
     parsed.problems = normalizeOverallAndScore(parsed.problems);
 
@@ -481,6 +535,12 @@ export default async function handler(req, res) {
     if (problemsNeedingVerify.length === 0) {
       // 全部题目都判定正确，没有需要校验的内容，直接返回第一次结果
       const finalText = JSON.stringify(deepRepairFracBraces(parsed));
+      if (wasTruncated) {
+        return res.status(200).json({
+          text: finalText,
+          warning: "本次识别的题目较多，AI 输出可能在最后被截断，建议核对一下题目数量是否与原图一致",
+        });
+      }
       return res.status(200).json({ text: finalText });
     }
 
@@ -548,6 +608,12 @@ export default async function handler(req, res) {
     }
 
     const finalText = JSON.stringify(deepRepairFracBraces(parsed));
+    if (wasTruncated) {
+      return res.status(200).json({
+        text: finalText,
+        warning: "本次识别的题目较多，AI 输出可能在最后被截断，建议核对一下题目数量是否与原图一致",
+      });
+    }
     return res.status(200).json({ text: finalText });
   } catch (e) {
     if (e && e.status) {
