@@ -227,7 +227,7 @@ export default async function handler(req, res) {
         },
         body: JSON.stringify({
           model: DEEPSEEK_MODEL,
-          max_tokens: 8192,
+          max_tokens: 16384,
           temperature: attempt === 1 ? 0.1 : 0.3,
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
