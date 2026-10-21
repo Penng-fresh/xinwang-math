@@ -169,10 +169,16 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "服务器未配置 API Key，请联系彭老师" });
   }
 
-  const { imageBase64, mediaType } = req.body || {};
-  if (!imageBase64) {
+  // 兼容多种前端字段名：本地版用 imageBase64，线上版用 imageData
+  const body = req.body || {};
+  const rawImage = body.imageBase64 || body.imageData || body.image || body.base64 || "";
+  if (!rawImage) {
     return res.status(400).json({ error: "缺少图片数据" });
   }
+  // 兼容前端已带 data:image/...;base64, 前缀的情况，避免重复拼接
+  const mPrefix = String(rawImage).trim().match(/^data:([^;]+);base64,(.*)$/);
+  const mediaType = mPrefix ? mPrefix[1] : (body.mediaType || "image/jpeg");
+  const imageBase64 = mPrefix ? mPrefix[2] : String(rawImage).trim();
 
   try {
     const response = await fetch(DEEPSEEK_BASE_URL, {
