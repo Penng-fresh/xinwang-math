@@ -204,44 +204,81 @@ export default async function handler(req, res) {
   const imageBase64 = mPrefix ? mPrefix[2] : String(rawImage).trim();
 
   try {
-    const response = await fetch(DEEPSEEK_BASE_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${DEEPSEEK_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: DEEPSEEK_MODEL,
-        max_tokens: 6000,
-        temperature: 0.1,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: [
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${mediaType || "image/jpeg"};base64,${imageBase64}`
-              }
-            },
-            { type: "text", text: "请识别图片中学生的计算题解题过程，判断题型，检查错误，只返回JSON。" }
-          ]}
-        ],
-      }),
-    });
+    // ── 为什么要重试 ──
+    // deepseek-flash 是推理模型，思考过程也算在 max_tokens 里。题目多、字迹乱的时候，
+    // 思考能把整个配额吃光，导致 content 为空（前端就报"未返回有效内容"），
+    // 或者只吐半截 JSON。同样的图重试一次往往就能出完整结果，所以要重试。
+    // 同时受 Vercel 函数时限约束，第一轮耗时过长就不再重试，避免直接超时。
+    const START = Date.now();
+    const MAX_ATTEMPTS = 2;
+    const RETRY_IF_UNDER_MS = 30000;
 
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      if (response.status === 429) {
-        return res.status(429).json({ error: "AI 服务暂时繁忙，请稍后重试" });
+    let text = "";
+    let lastFinish = "";
+    let lastUsage = null;
+    let lastText = "";
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const response = await fetch(DEEPSEEK_BASE_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${DEEPSEEK_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: DEEPSEEK_MODEL,
+          max_tokens: 8192,
+          temperature: attempt === 1 ? 0.1 : 0.3,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: [
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${mediaType || "image/jpeg"};base64,${imageBase64}`
+                }
+              },
+              { type: "text", text: "请识别图片中学生的计算题解题过程，判断题型，检查错误，只返回JSON。" }
+            ]}
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        if (response.status === 429) {
+          return res.status(429).json({ error: "AI 服务暂时繁忙，请稍后重试" });
+        }
+        return res.status(502).json({ error: "AI 服务异常: " + (errData?.error?.message || response.statusText) });
       }
-      return res.status(502).json({ error: "AI 服务异常: " + (errData?.error?.message || response.statusText) });
+
+      const data = await response.json();
+      const choice = data?.choices?.[0];
+      lastFinish = choice?.finish_reason || "";
+      lastUsage = data?.usage || null;
+      lastText = (choice?.message?.content || "").trim();
+
+      // content 为空＝思考把配额吃光了；有内容也要先确认它能解析成 JSON
+      if (lastText) {
+        try {
+          parseResult(lastText);
+          text = lastText;
+          break;
+        } catch (_) {
+          // JSON 被截断或格式坏，走重试
+        }
+      }
+
+      console.error(`[grade] attempt ${attempt} 失败 finish=${lastFinish} usage=${JSON.stringify(lastUsage)} contentLen=${lastText.length}`);
+
+      if (attempt < MAX_ATTEMPTS && Date.now() - START > RETRY_IF_UNDER_MS) break;
     }
 
-    const data = await response.json();
-    const text = data?.choices?.[0]?.message?.content || "";
-
     if (!text) {
-      return res.status(502).json({ error: "AI 未返回有效内容，请重试" });
+      return res.status(502).json({
+        error: "这张图题目较多或字迹偏乱，AI 分析到一半中断了。请把题目分成两张拍，或靠近一点拍清楚再试。",
+        debugRaw: `finish=${lastFinish} usage=${JSON.stringify(lastUsage)} contentLen=${lastText.length}`
+      });
     }
 
     const problems = parseResult(text);
