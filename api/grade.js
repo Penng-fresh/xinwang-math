@@ -1,415 +1,227 @@
-// 后端代理：浏览器把作业照片发到这里，这里再用服务器端的密钥去调用智谱 GLM 视觉模型。
-// 密钥只存在于 Vercel 项目的环境变量里（ZHIPU_API_KEY），前端代码和浏览器永远看不到它。
-const MODEL = "glm-4.6v"; // 付费旗舰版，106B参数，视觉理解精度更高，独立资源池不易被限流
-const MAX_RETRIES = 3;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Vercel Serverless Function - AI 批改代理
+// 前端上传图片 → 后端调 DeepSeek → 返回批改结果
 
-// ============================================================
-// 【两次调用架构说明】
-// 第一次调用：图片 + 不开思考模式（跟以前一样快，几秒到十几秒）。
-//   负责识别图片内容、给出初步的批改结果（overall/issues/score等）。
-// 第二次调用：只在第一次判定"有问题"的题目上进行，纯文字（不再传图片）+
-//   开启思考模式，专门针对 issues 里列出的每一条错误重新演算校验一遍。
-//   因为不需要处理图片、且只校验少量文字内容，速度比"图片+思考"快得多，
-//   目的是避免 Vercel Hobby 套餐 300 秒的硬性执行时间上限被触发。
-// 如果第二次调用超时或失败，会直接使用第一次的结果兜底，不会导致整个
-// 批改请求失败——宁可保留一次调用的结果，也不要因为校验环节拖垮整体。
-// ============================================================
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
+const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1/chat/completions";
+const DEEPSEEK_MODEL = "deepseek-flash";
 
-// 第二次调用（校验环节）专用的系统提示词，按题型分别放在各自的小文件里：
-//   - 有理数运算：api/lib/rationalCheck.js（含 VERIFY_SYSTEM_PROMPT + Plan B 验算引擎）
-//   - 混合运算：api/lib/mixedOpsCheck.js（含 MIXED_OPS_VERIFY_SYSTEM_PROMPT）
-// 这样以后每加一种新题型，只需要新增一个小文件，不用继续在这一个文件里无限堆砌。
-import { VERIFY_SYSTEM_PROMPT as RATIONAL_VERIFY_PROMPT, codeVerifyRationalSteps } from "./lib/rationalCheck.js";
-import { MIXED_OPS_VERIFY_SYSTEM_PROMPT } from "./lib/mixedOpsCheck.js";
+const SYSTEM_PROMPT = `你是一位严格但耐心的初中数学老师，能检查所有类型计算题的解题过程。
 
-// ============================================================
-// 兜底修复：把字符串里所有 \frac{分子}{分母 这种缺失收尾花括号的情况，
-// 自动补全为完整闭合的 \frac{分子}{分母}，不影响本来就写完整的公式。
-// ============================================================
-function repairFracBraces(text) {
-  if (typeof text !== "string" || text.indexOf("\\frac{") === -1) return text;
-  const marker = "\\frac{";
-  let result = "";
-  let i = 0;
-  while (i < text.length) {
-    const idx = text.indexOf(marker, i);
-    if (idx === -1) {
-      result += text.slice(i);
-      break;
-    }
-    result += text.slice(i, idx);
-    let pos = idx + marker.length;
-    const numStart = pos;
-    while (pos < text.length && text[pos] !== "}" && text[pos] !== "{") pos++;
-    if (text[pos] !== "}") {
-      result += marker;
-      i = idx + marker.length;
-      continue;
-    }
-    const numerator = text.slice(numStart, pos);
-    pos++;
-    if (text[pos] !== "{") {
-      result += `\\frac{${numerator}}`;
-      i = pos;
-      continue;
-    }
-    pos++;
-    const denomStart = pos;
-    while (pos < text.length && text[pos] !== "}" && text[pos] !== "{") pos++;
-    const denominator = text.slice(denomStart, pos);
-    result += `\\frac{${numerator}}{${denominator}}`;
-    i = text[pos] === "}" ? pos + 1 : pos;
-  }
-  return result;
-}
+【重要：识别图片中所有题目】
+图片中可能有多道题，必须逐一识别并批改每一道，不能遗漏。按题目在图片中出现的顺序编号。
 
-// 递归地对一个对象/数组里所有的字符串值做 repairFracBraces 修复
-function deepRepairFracBraces(value) {
-  if (typeof value === "string") return repairFracBraces(value);
-  if (Array.isArray(value)) return value.map(deepRepairFracBraces);
-  if (value && typeof value === "object") {
-    const out = {};
-    for (const k in value) out[k] = deepRepairFracBraces(value[k]);
-    return out;
-  }
-  return value;
-}
+【识别文字的注意事项】
+- 严格按照图片中实际写的字母转录，不要臆造不存在的字母
+- 常见字母：x、y、a、b、n、m等，务必仔细辨认，不要将x看成n或其他字母
+- 数字和字母要仔细区分，如1和l、0和O
 
-// 从模型返回的原始文字里，尽量稳健地提取出 JSON 对象。
-// 模型有时会在 JSON 前后多加说明文字或代码块围栏，这里做兼容处理。
-// 如果直接 JSON.parse 失败（常见于 AI 在字符串里写了没有正确转义的引号/反斜杠，
-// 混合运算这类结构复杂的题目更容易出现），再用一次"逐字符修复转义"的方式抢救一遍——
-// 这段修复逻辑跟前端 App.jsx 里 parseResult 函数的第二层修复完全对应，只是挪到
-// 后端来，这样"能不能救回一次完整的验算流程"就不再完全依赖前端那个正则兜底解析器
-// （前端那个解析器解析不了 issues 这种对象数组，只能被迫留空，导致分数、总评还在，
-// issues 却是空的这种自相矛盾的结果）。
-function repairJsonEscaping(js) {
-  let out = "", inStr = false, esc = false;
-  for (let i = 0; i < js.length; i++) {
-    const c = js[i], code = c.charCodeAt(0);
-    if (esc) { out += c; esc = false; continue; }
-    if (c === "\\" && inStr) { esc = true; out += c; continue; }
-    if (c === '"') {
-      if (!inStr) { inStr = true; out += c; continue; }
-      let j = i + 1;
-      while (j < js.length && " \t\n\r".includes(js[j])) j++;
-      const nx = js[j];
-      if (nx === ":" || nx === "," || nx === "}" || nx === "]" || j >= js.length) { inStr = false; out += c; }
-      else { out += '\\"'; }
-      continue;
-    }
-    if (inStr && code < 32) { if (code === 10) { out += "\\n"; continue; } if (code === 13) { out += "\\r"; continue; } if (code === 9) { out += "\\t"; continue; } continue; }
-    out += c;
-  }
-  return out;
-}
-function extractJson(text) {
-  if (typeof text !== "string") return null;
-  let cleaned = text.replace(/```json/gi, "").replace(/```/g, "").trim();
-  const start = cleaned.indexOf("{");
-  const end = cleaned.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) return null;
-  const js = cleaned.slice(start, end + 1);
+【先判断每道题的题型】
+有理数加减法、有理数乘除法、有理数乘方混合、一元一次方程、一元二次方程、二元一次方程组、因式分解、整式运算、分式化简、分式方程、不等式、根式化简、实数运算、其他计算题
+
+【错误检查原则：发现根本性错误立即停止】
+如果某道题第一步就出现根本性错误（如移项未变号、去括号符号完全错误、公式套错），则：
+- 只在issues中报告该错误
+- summary说明"第X行存在根本性错误，后续步骤均受影响，建议先纠正此处再继续"
+- 不再逐行列出后续所有错误
+- score给予较低分数
+
+【评分标准】
+- 100分：过程完全正确，步骤规范，没有任何问题
+- 90-95分：过程正确但某一步可更精简（非错误），给予肯定
+- 70-89分：存在计算错误或步骤不规范但不影响整体思路
+- 60-69分：存在较严重的逻辑错误或跳步
+- 0-59分：存在根本性错误或完全错误
+- 注意：只有当解题过程完全正确、没有发现具体错误时，才给100分。不要给了100分又加"需注意XXX"这种模糊提醒
+
+【各题型重点检查】
+一元一次方程：跳步（去分母和去括号合并），去括号符号，移项变号
+一元二次方程：漏解，判别式计算，配方/公式/因式分解符号处理
+二元一次方程组：消元计算，漏代入验证，加减法每项变号
+因式分解：漏提公因式，公式套用，分解不彻底
+整式运算：乘法公式漏项（尤其2ab），去括号负号，指数运算
+分式化简：约项错误（只能约因式），漏写分母不为零条件
+分式方程：去分母漏乘，漏验根，增根未舍去
+不等式：乘除负数不变号，数轴端点虚实
+根式化简：提取不彻底，有理化错误，不能拆加减根式
+实数运算：绝对值符号，负数乘方括号位置，运算顺序
+
+【有理数加减法批改规则 - 必须严格遵守】
+学生解题必须有三个步骤：
+第1步-化简符号：只做符号化简，不做计算。利用"奇负偶正"原则，化去多余的正负号和括号。化简后数字不动。
+第2步-带符号搬家：寻找"同号凑整，异号相消"的组合，把方便计算的项移到一起。不计算。
+第3步-分组计算：对移项后的组合口算得出结果，得到最终答案。
+- 如果缺少步骤，在skipped_steps中列出缺失的步骤
+- 如果学生跳步直接写答案，score扣10-20分
+
+【有理数乘除法批改规则 - 必须严格遵守】
+先判断小类，再按对应步骤检查：
+· 类型A 连乘：多个因数相乘，无除号、无乘方
+· 类型B 除法/乘除混合：出现除号
+· 类型C 含乘方：出现乘方形式（如 -2²、(-2)²、(2/3)²）
+注意：加减法题仍用上面加减法的三步，禁止拿乘除的步骤去套加减法；乘除法题也禁止用加减法三步。
+
+标准步骤（类型A：定符号→约分→计算结果；类型B：定符号→除法转乘法→约分→计算结果；类型C：算乘方→定符号→【除法转乘法】→约分→计算结果）：
+第1步-算乘方（仅类型C）：先把每个乘方单独算成一个数，再进入后续步骤
+第2步-定符号：只数负号的个数（原式中的负因数、负除数、乘方算出的负数各算一个），不看绝对值大小。奇数个负号→结果为负，偶数个（含0个）→结果为正。先把符号写在等号后面
+第3步-除法转乘法（类型B、C含除号时）：每个除号换成乘号，同时把除号紧后面那个数换成它的倒数；除号前面的被除数保持不动。连续除法 a÷b÷c 要逐个转成 a×(1/b)×(1/c)
+第4步-约分：倒数写成 1/某数 后先约分再相乘；带分数先化假分数，小数先化分数；负号不参与约分，只在绝对值内部约
+第5步-定值：算出绝对值部分的积，与第2步的符号合并，写出最终答案
+- 缺少步骤的，在skipped_steps中列出缺失的步骤名（用「算乘方」「定符号」「除法转乘法」「约分」「计算结果」这几个名称），本题型不该有的步骤不要列进去
+- 学生跳步直接写答案、无中间过程的，score扣10-20分
+
+【除法转乘法检查】
+- 只把“÷”改成“×”，却没有把除数换成倒数 → 标记「除法转乘法错误」
+- 把除数取了倒数，却没有把“÷”改成“×” → 标记「除法转乘法错误」
+- 把除号前面的被除数也取了倒数 → 标记「除法转乘法错误」
+- 连续除法只处理了第一个除号，后面的除号没转 → 标记「除法转乘法错误」
+- 除以一个分数时，倒数是分子分母整体交换：÷(2/3) = ×(3/2)，只翻一个分子或分母是不对的 → 标记「除法转乘法错误」
+
+【倒数检查 - 高频错误】
+- 负数的倒数仍是负数：-3 的倒数是 -1/3，不是 1/3
+- 倒数不是相反数：-3 的倒数是 -1/3，相反数是 3，两者不能混
+- 带分数必须先化成假分数再取倒数：-1又1/2 = -3/2，所以倒数是 -2/3（常见错：只把分数部分倒成 -1又2/3，或把假分数 -3/2 直接当成倒数）
+- 小数先化成分数再取倒数：0.25 的倒数是 4，-0.5 的倒数是 -2
+- 0 没有倒数，出现除以 0 是致命错误
+- 只有 1 和 -1 的倒数是它本身
+- 发现以上任一情况，type 写「倒数错误」，description 要点明“倒数是1除以这个数、符号不变”
+
+【多个因数符号判断（奇负偶正）检查】
+- 只数负号的个数，不看绝对值大小：2×(-3)×(-4) 有两个负号，结果为正；(-2)×3×(-4)×5 有两个负号，结果为正
+- 别漏数：负号可能在括号里 -(-3)、可能在带分数前 -1又1/2、可能在乘方底数前 (-2)³
+- 减号不是负号：3-(-2)×5 里的减号不计入“负因数个数”，应先算乘法再算减法
+- 只数了第一个负号就下结论、或按绝对值大小定符号 → 标记「符号错误」，description 必须写出“负号共n个，奇数个为负/偶数个为正”
+
+【乘方与运算顺序检查】
+运算顺序固定为：先括号 → 再乘方 → 再乘除 → 最后加减；同一级运算从左到右。
+- -2² 与 (-2)² 不同：-2² = -(2×2) = -4；(-2)² = 4
+- (-2)³ = -8；-2³ = -8（值相同，但 -2³ 表示 2³ 的相反数）
+- 分数的乘方必须带括号：(2/3)² = 4/9；2/3² = 2/9
+- 底数为负、指数为偶数→结果为正；指数为奇数→结果为负
+- 乘方没先算就做乘除、把 -2³ 当成 (-2)×3、把 5-2² 算成 9 → 标记「运算顺序错误」或「负数乘方错误」
+- 「定符号」或「除法转乘法」这一步出错属于根本性错误：只报这一处，按上面【发现根本性错误立即停止】处理，不要逐行列出后续连带错误
+
+【乘除法扣分参考（在基准分上扣）】
+- 符号定错（奇负偶正判断错）且导致结果错：扣15-25分
+- 除法转乘法漏取倒数或漏换乘号：扣15-25分
+- 倒数取错（符号丢、带分数未化假分数、与相反数混淆）：扣10-20分
+- 乘方底数判断错或运算顺序错：扣10-20分
+- 跳步直接写答案、无中间过程：扣10-20分
+- 过程完全正确、只是某步可更精简：不扣分，给90-95分
+
+只返回JSON，所有字段值不得含换行符，issues为空时写[]：
+{"problems":[{"problem_number":1,"problem_type":"题型","transcription":["第1行","第2行"],"overall":"正确","score":90,"steps_detected":["步骤"],"skipped_steps":[],"issues":[{"line":1,"type":"错误类型","content":"该行内容","description":"含原理的错误说明","suggestion":"正确写法"}],"praise":"鼓励","summary":"总体评价"},{"problem_number":2,"problem_type":"题型","transcription":["第1行"],"overall":"正确","score":95,"steps_detected":[],"skipped_steps":[],"issues":[],"praise":"","summary":"总体评价"}]}`;
+
+// JSON 解析容错
+function parseResult(raw) {
+  const s = raw.indexOf("{");
+  const e = raw.lastIndexOf("}");
+  if (s === -1 || e === -1) throw new Error("未找到JSON内容");
+  const js = raw.slice(s, e + 1);
+
   try {
-    return JSON.parse(js);
-  } catch {
-    try {
-      return JSON.parse(repairJsonEscaping(js));
-    } catch {
-      return null;
-    }
-  }
-}
+    const f1 = js.replace(/[\x00-\x1F\x7F]/g, (c) => {
+      if (c === "\n") return "\\n";
+      if (c === "\r") return "\\r";
+      if (c === "\t") return "\\t";
+      return "";
+    });
+    return JSON.parse(f1);
+  } catch (_) {}
 
-// 调用智谱 API，支持限流重试；timeoutMs 用于给单次请求设置硬性超时，
-// 超时后会主动中断请求并抛出错误，方便上层做"超时就放弃校验、直接用兜底结果"的处理。
-async function callZhipu(apiKey, body, timeoutMs) {
-  let lastError = null;
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    const controller = timeoutMs ? new AbortController() : null;
-    const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
-    try {
-      const zhipuRes = await fetch("https://open.bigmodel.cn/api/paas/v4/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer " + apiKey,
-        },
-        body: JSON.stringify(body),
-        signal: controller ? controller.signal : undefined,
-      });
-      if (timer) clearTimeout(timer);
-      if (zhipuRes.ok) {
-        return await zhipuRes.json();
-      }
-      const errData = await zhipuRes.json().catch(() => ({}));
-      const msg = errData?.error?.message || ("智谱 API 错误 " + zhipuRes.status);
-      lastError = { status: zhipuRes.status, msg };
-      if (zhipuRes.status === 429 && attempt < MAX_RETRIES - 1) {
-        await sleep(1000 * Math.pow(2, attempt));
+  try {
+    let out = "", inStr = false, esc = false;
+    for (let i = 0; i < js.length; i++) {
+      const c = js[i], code = c.charCodeAt(0);
+      if (esc) { out += c; esc = false; continue; }
+      if (c === "\\" && inStr) { esc = true; out += c; continue; }
+      if (c === '"') {
+        if (!inStr) { inStr = true; out += c; continue; }
+        let j = i + 1;
+        while (j < js.length && " \t\n\r".includes(js[j])) j++;
+        const nx = js[j];
+        if (nx === ":" || nx === "," || nx === "}" || nx === "]" || j >= js.length) {
+          inStr = false; out += c;
+        } else {
+          out += '\\"';
+        }
         continue;
       }
-      throw lastError;
-    } catch (e) {
-      if (timer) clearTimeout(timer);
-      if (e.name === "AbortError") {
-        throw { status: 408, msg: "请求超时" };
+      if (inStr && code < 32) {
+        if (code === 10) { out += "\\n"; continue; }
+        if (code === 13) { out += "\\r"; continue; }
+        if (code === 9)  { out += "\\t"; continue; }
+        continue;
       }
-      if (e && e.status) throw e; // 已经是我们自己包装过的错误，直接往外抛
-      lastError = { status: 500, msg: e.message };
-      throw lastError;
+      out += c;
     }
-  }
-  throw lastError;
-}
+    return JSON.parse(out);
+  } catch (_) {}
 
-// 兜底修复：不管模型自己在 JSON 里怎么写 overall/score，都用 issues 数组的
-// 真实内容强制校正一遍，保证"没有任何 issue 却不是正确/满分"这种自相矛盾
-// 的结果不会出现在最终返回给前端的数据里——这一步不依赖模型是否遵守提示词，
-// 是纯代码逻辑的最后一道保险。
-function normalizeOverallAndScore(problems) {
-  if (!Array.isArray(problems)) return problems;
-  return problems.map((p) => {
-    if (!p || typeof p !== "object") return p;
-    const hasIssues = Array.isArray(p.issues) && p.issues.length > 0;
-    if (!hasIssues) {
-      // 没有任何具体错误：必须判定为"正确"，且给满分，不允许模型自己扣分；
-      // summary 也统一换成干净的肯定表述，不管 AI 原来写了什么"但/仍需注意"之类的话。
-      return { ...p, overall: "正确", score: 100, summary: "解题过程规范，未发现问题。" };
-    }
-    // 有具体错误：必须判定为"有问题"，不允许模型自相矛盾地标"正确"
-    return { ...p, overall: "有问题" };
-  });
+  throw new Error("无法解析AI返回内容");
 }
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "只支持 POST 请求" });
+    return res.status(405).json({ error: "Method not allowed" });
   }
-  const apiKey = process.env.ZHIPU_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: "服务器未配置 ZHIPU_API_KEY，请在 Vercel 项目设置里添加环境变量" });
+
+  if (!DEEPSEEK_API_KEY) {
+    return res.status(500).json({ error: "服务器未配置 API Key，请联系彭老师" });
   }
-  const { imageData, mediaType, systemPrompt, userPrompt } = req.body || {};
-  if (!imageData) {
+
+  const { imageBase64, mediaType } = req.body || {};
+  if (!imageBase64) {
     return res.status(400).json({ error: "缺少图片数据" });
   }
 
   try {
-    // ------------------------------------------------------------
-    // 第一次调用：图片 + 不开思考，跟以前完全一样，负责识别和初步批改
-    // 给一个240秒的超时上限（留60秒余量给后续处理和可能的二次校验兜底逻辑），
-    // 避免智谱接口偶发响应缓慢时，直接把 Vercel Hobby 套餐300秒的硬上限撞穿、
-    // 报出一个前端完全不知所云的失败。
-    // max_tokens 从原先的 8192 调大到 16384：如果一次上传的照片里题目较多
-    // （比如一整页七八道题，每道题都要输出逐行 transcription + issues），
-    // 8192 很容易在写到中间某道题时就被截断，而 extractJson 用
-    // lastIndexOf("}") 去找收尾括号，截断后的文本仍可能拼出一个"看起来
-    // 完整"但其实只包含前几道题的 JSON，导致后面的题目被无声地漏掉。
-    // ------------------------------------------------------------
-    const firstData = await callZhipu(apiKey, {
-      model: MODEL,
-      messages: [
-        { role: "system", content: systemPrompt || "" },
-        {
-          role: "user",
-          content: [
-            { type: "image_url", image_url: { url: "data:" + (mediaType || "image/jpeg") + ";base64," + imageData } },
-            { type: "text", text: userPrompt || "请分析这张图片。" },
-          ],
-        },
-      ],
-      temperature: 0.3,
-      max_tokens: 16384,
-      thinking: { type: "disabled" },
-    }, 240000);
-    const firstChoice = firstData?.choices?.[0];
-    const firstText = firstChoice?.message?.content || "";
-    if (!firstText) {
-      const reason = firstChoice?.finish_reason || "未知";
-      return res.status(502).json({
-        error: "AI返回了空结果（结束原因：" + reason + "），可能是图片内容被安全过滤拦截，或模型处理异常，请换一张照片重试",
-        debugRaw: JSON.stringify(firstData).slice(0, 500),
-      });
-    }
-
-    // 【截断检测】如果模型是因为撞到 max_tokens 上限而被迫中断输出
-    // （finish_reason === "length"），说明这次返回的 JSON 大概率是不完整的——
-    // 可能刚好在某道题写到一半就被切断，也可能表面上拼出了完整 JSON、
-    // 实际上少了后面的题目。这种情况不能当作正常结果直接返回给前端，
-    // 否则家长和老师看到的会是一份"看起来没问题、实际上被悄悄截断"的批改，
-    // 比直接报错更危险。
-    const wasTruncated = firstChoice?.finish_reason === "length";
-
-    const parsed = extractJson(firstText);
-    // 如果连修复后都没法解析成 JSON，说明这次 AI 输出的格式问题比较严重，
-    // 不能再像以前那样把这份未经任何验算、未经二次校验的原始文字直接甩给前端——
-    // 那样会导致 Plan B 验算引擎、normalizeOverallAndScore 这道"没issue就必须
-    // 满分"的保险、二次AI校验全部被绕过，前端只能靠一个很脆弱的正则兜底解析器
-    // 去硬抠，抠不出 issues 这种对象数组，就会出现"有分数、有总评，却没有任何
-    // issue"这种自相矛盾的结果。与其让半成品蒙混过关，不如明确报错，请家长
-    // 重新拍一次——这比一份看似正常、实则数据不一致的结果更安全。
-    if (!parsed || !Array.isArray(parsed.problems)) {
-      if (wasTruncated) {
-        return res.status(502).json({
-          error: "本次识别的题目较多，AI 输出在中途被截断导致无法解析，请尝试拍摄更少题目的照片，或分多次上传",
-        });
-      }
-      return res.status(502).json({
-        error: "AI 返回的批改结果格式异常，暂时无法解析，请重新拍照提交一次试试",
-      });
-    }
-
-    // ------------------------------------------------------------
-    // 【一次一题】产品层面已明确要求学生每次只拍一道自己拿不准的题，
-    // 不再支持"一整页多道题"一起批改——多题挤在一张照片里，每道题分到
-    // 的像素会骤降，OCR 更容易认错手写的正负号等细节，识别质量下降的
-    // 同时批改复杂度还会累积升高，两者叠加导致体验和准确度都打折扣。
-    // 这里加一道"门槛"：一旦识别出题目数量大于 1，直接提示学生重新
-    // 只拍一题，不再往下走多题批改流程——下面的验算引擎、二次校验、
-    // 去重等逻辑完全不用改动，因为走到这里时题目数量必然是 1。
-    // ------------------------------------------------------------
-    if (parsed.problems.length > 1) {
-      return res.status(200).json({
-        error: "检测到这张照片里有多道题目。为了保证批改的准确度，请每次只拍一道题上传哦～",
-        multipleDetected: true,
-      });
-    }
-
-    // 把"\frac{分子}{分母"缺失收尾花括号"这种 AI 常见的 LaTeX 输出瑕疵，提前在这里
-    // 修复好，而不是像以前那样只在最后返回前才修——因为下面的代码验算引擎需要
-    // 正确闭合的 \frac{}{} 才能把每一行精确解析成数字，如果留着缺陷跑代码校验，
-    // 会把"4\frac{2}{9"这种残缺文本拆解成好几个不相关的独立数字，产生新的误判。
-    Object.assign(parsed, deepRepairFracBraces(parsed));
-    parsed.problems = normalizeOverallAndScore(parsed.problems);
-    // 【方案B】用代码对"有理数运算"题型的每一步做穷举验算，撤销证明是误判的
-    // issue、把无法证伪的 issue 描述换成代码算出的真实情况、并对 AI 完全漏检的
-    // 真实计算错误主动补上 issue——这一步跑在决定要不要送二次AI校验之前，
-    // 如果代码发现了新的真实问题，这道题也会被正常送去二次校验兜底。
-    parsed.problems = codeVerifyRationalSteps(parsed.problems);
-    parsed.problems = normalizeOverallAndScore(parsed.problems);
-
-    // 找出所有被判定"有问题"、需要送去二次校验的题目
-    const problemsNeedingVerify = parsed.problems.filter(
-      (p) => p && Array.isArray(p.issues) && p.issues.length > 0
-    );
-
-    if (problemsNeedingVerify.length === 0) {
-      // 全部题目都判定正确，没有需要校验的内容，直接返回第一次结果
-      const finalText = JSON.stringify(deepRepairFracBraces(parsed));
-      if (wasTruncated) {
-        return res.status(200).json({
-          text: finalText,
-          warning: "本次识别的题目较多，AI 输出可能在最后被截断，建议核对一下题目数量是否与原图一致",
-        });
-      }
-      return res.status(200).json({ text: finalText });
-    }
-
-    // ------------------------------------------------------------
-    // 按 problem_type 选择这道题该用哪一份"二次校验"提示词。因为现在已经
-    // 是"一次一题"（parsed.problems 必然只有1道），可以直接取第一题的
-    // problem_type 来决定。如果这道题的题型暂时还没有专属的二次校验提示词
-    // （比如以后遇到"根式化简"这类还没做二次校验模块的新题型），宁可直接
-    // 跳过二次校验、使用第一次调用的结果兜底，也不要把"有理数运算"或
-    // "混合运算"的规则硬套到不匹配的题型上——那样只会引入新的、文不对题
-    // 的误判，比不做二次校验更糟。
-    // ------------------------------------------------------------
-    const singleProblemType = String(parsed.problems[0]?.problem_type || "");
-    let verifySystemPromptToUse = null;
-    if (singleProblemType.includes("有理数")) verifySystemPromptToUse = RATIONAL_VERIFY_PROMPT;
-    else if (singleProblemType.includes("混合运算")) verifySystemPromptToUse = MIXED_OPS_VERIFY_SYSTEM_PROMPT;
-
-    if (!verifySystemPromptToUse) {
-      const finalText = JSON.stringify(deepRepairFracBraces(parsed));
-      if (wasTruncated) {
-        return res.status(200).json({
-          text: finalText,
-          warning: "本次识别的题目较多，AI 输出可能在最后被截断，建议核对一下题目数量是否与原图一致",
-        });
-      }
-      return res.status(200).json({ text: finalText });
-    }
-
-    // ------------------------------------------------------------
-    // 第二次调用：纯文字 + 开思考，只针对有问题的题目做演算校验
-    // 给一个较短的超时时间（150秒），确保总耗时留有余量，
-    // 不会撞到 Vercel Hobby 套餐 300 秒的硬性上限。
-    // 如果校验调用超时或失败，直接使用第一次的结果兜底，不影响整体返回。
-    // ------------------------------------------------------------
-    const verifyInput = problemsNeedingVerify.map((p) => ({
-      problem_number: p.problem_number,
-      transcription: p.transcription || [],
-      issues: p.issues,
-    }));
-
-    let verifiedProblems = null;
-    try {
-      const verifyData = await callZhipu(
-        apiKey,
-        {
-          model: MODEL,
-          messages: [
-            { role: "system", content: verifySystemPromptToUse },
+    const response = await fetch(DEEPSEEK_BASE_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${DEEPSEEK_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: DEEPSEEK_MODEL,
+        max_tokens: 6000,
+        temperature: 0.1,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: [
             {
-              role: "user",
-              content: [
-                { type: "text", text: "请复核以下批改结果：\n" + JSON.stringify({ problems: verifyInput }) },
-              ],
+              type: "image_url",
+              image_url: {
+                url: `data:${mediaType || "image/jpeg"};base64,${imageBase64}`
+              }
             },
-          ],
-          temperature: 0.1,
-          max_tokens: 4096,
-          thinking: { type: "enabled" },
-        },
-        150000 // 150秒超时
-      );
-      const verifyChoice = verifyData?.choices?.[0];
-      const verifyText = verifyChoice?.message?.content || "";
-      const verifyParsed = extractJson(verifyText);
-      if (verifyParsed && Array.isArray(verifyParsed.problems)) {
-        verifiedProblems = verifyParsed.problems;
+            { type: "text", text: "请识别图片中学生的计算题解题过程，判断题型，检查错误，只返回JSON。" }
+          ]}
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      if (response.status === 429) {
+        return res.status(429).json({ error: "AI 服务暂时繁忙，请稍后重试" });
       }
-    } catch (verifyErr) {
-      // 校验失败（超时/网络问题/解析失败等），静默降级，使用第一次的结果
-      verifiedProblems = null;
+      return res.status(502).json({ error: "AI 服务异常: " + (errData?.error?.message || response.statusText) });
     }
 
-    // 把校验结果按 problem_number 合并回原始结果里，只覆盖 issues/overall/score/summary，
-    // 其余字段（transcription、problem_type、steps_detected、praise等）保持第一次调用的内容不变
-    if (verifiedProblems) {
-      const verifiedMap = new Map(verifiedProblems.map((v) => [v.problem_number, v]));
-      parsed.problems = parsed.problems.map((p) => {
-        const v = verifiedMap.get(p.problem_number);
-        if (!v) return p; // 这道题没有被送去校验（本来就没问题），原样保留
-        return {
-          ...p,
-          issues: Array.isArray(v.issues) ? v.issues : p.issues,
-          overall: v.overall || p.overall,
-          score: typeof v.score === "number" ? v.score : p.score,
-          summary: v.summary || p.summary,
-        };
-      });
-      parsed.problems = codeVerifyRationalSteps(parsed.problems);
-      parsed.problems = normalizeOverallAndScore(parsed.problems);
+    const data = await response.json();
+    const text = data?.choices?.[0]?.message?.content || "";
+
+    if (!text) {
+      return res.status(502).json({ error: "AI 未返回有效内容，请重试" });
     }
 
-    const finalText = JSON.stringify(deepRepairFracBraces(parsed));
-    if (wasTruncated) {
-      return res.status(200).json({
-        text: finalText,
-        warning: "本次识别的题目较多，AI 输出可能在最后被截断，建议核对一下题目数量是否与原图一致",
-      });
-    }
-    return res.status(200).json({ text: finalText });
+    const problems = parseResult(text);
+    const result = problems.problems || (Array.isArray(problems) ? problems : [problems]);
+
+    return res.status(200).json({ problems: result });
+
   } catch (e) {
-    if (e && e.status) {
-      const friendlyMsg = e.status === 429
-        ? "当前批改请求较多，请稍等几秒后重新点击批改"
-        : e.msg;
-      return res.status(e.status).json({ error: friendlyMsg });
-    }
-    return res.status(500).json({ error: "调用智谱 API 失败：" + e.message });
+    console.error("Grade error:", e);
+    return res.status(500).json({ error: "批改失败: " + e.message });
   }
 }
