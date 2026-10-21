@@ -225,7 +225,12 @@ export default async function handler(req, res) {
     const problems = parseResult(text);
     const result = problems.problems || (Array.isArray(problems) ? problems : [problems]);
 
-    return res.status(200).json({ problems: result });
+    // 线上前端读的是 text（JSON 字符串）；本地版读的是 problems 数组。两个都返回，兼容两边。
+    const s0 = text.indexOf("{");
+    const e0 = text.lastIndexOf("}");
+    const cleanText = s0 >= 0 && e0 > s0 ? text.slice(s0, e0 + 1) : text;
+
+    return res.status(200).json({ text: cleanText, problems: result });
 
   } catch (e) {
     console.error("Grade error:", e);
