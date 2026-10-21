@@ -17,6 +17,7 @@ const SYSTEM_PROMPT = `你是一位严格但耐心的初中数学老师，能检
 
 【先判断每道题的题型】
 有理数加减法、有理数乘除法、有理数乘方混合、一元一次方程、一元二次方程、二元一次方程组、因式分解、整式运算、分式化简、分式方程、不等式、根式化简、实数运算、其他计算题
+题型名必须从上面这一行里逐字照抄，不得增加、删减或改写任何字。例如必须写"有理数乘方混合"，不能写成"有理数乘方混合运算"；必须写"有理数乘除法"，不能写成"有理数乘除运算"。
 
 【错误检查原则：发现根本性错误立即停止】
 如果某道题第一步就出现根本性错误（如移项未变号、去括号符号完全错误、公式套错），则：
@@ -224,12 +225,7 @@ export default async function handler(req, res) {
     const problems = parseResult(text);
     const result = problems.problems || (Array.isArray(problems) ? problems : [problems]);
 
-    // 线上前端读的是 text（JSON 字符串）；本地版读的是 problems 数组。两个都返回，兼容两边。
-    const s0 = text.indexOf("{");
-    const e0 = text.lastIndexOf("}");
-    const cleanText = s0 >= 0 && e0 > s0 ? text.slice(s0, e0 + 1) : text;
-
-    return res.status(200).json({ text: cleanText, problems: result });
+    return res.status(200).json({ problems: result });
 
   } catch (e) {
     console.error("Grade error:", e);
