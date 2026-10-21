@@ -4,7 +4,8 @@ import "katex/dist/katex.min.css";
 
 // MathText：把 AI 返回的混合文本（中文 + LaTeX 公式）渲染成可读排版。
 // AI 有时会用 $...$ 包裹公式（如 $\frac{1}{2}$），有时直接裸写 \frac{1}{2}，
-// 这个组件两种情况都能处理，不会让 $ 符号残留在页面上。
+// 还会图省事直接写 5/3 这种斜杠分数 —— 三种情况都要渲染成真正的分数排版，
+// 不能让家长看到 "5/3" 这种半成品写法。
 function MathText({ children }) {
   const text = String(children ?? "");
   if (!text) return <span />;
@@ -16,28 +17,46 @@ function MathText({ children }) {
   const TOKEN = /\$([^$]+)\$|\\frac\{[^{}]*\}\{[^{}]*\}|\\sqrt\{[^{}]*\}/g;
   let last = 0, m;
   while ((m = TOKEN.exec(text)) !== null) {
-    if (m.index > last) {
-      // 中间的普通文字：去掉孤立的 $ 符号（可能是 AI 格式不规范的残留）
-      const txt = text.slice(last, m.index).replace(/\$/g, "");
-      if (txt) parts.push({ t: "text", v: txt });
-    }
+    if (m.index > last) parts.push({ t: "text", v: text.slice(last, m.index) });
     // m[1] 有值说明是 $...$ 包裹的，取内部公式；否则整体就是 \frac 或 \sqrt
     parts.push({ t: "formula", v: m[1] !== undefined ? m[1] : m[0] });
     last = m.index + m[0].length;
   }
-  if (last < text.length) {
-    const txt = text.slice(last).replace(/\$/g, "");
-    if (txt) parts.push({ t: "text", v: txt });
-  }
+  if (last < text.length) parts.push({ t: "text", v: text.slice(last) });
 
-  return <>{parts.map((p, i) => {
+  // 第二步：把斜杠分数 a/b 转成 \frac{a}{b}
+  // 公式内部直接替换；普通文字里要先把 a/b 拆出来单独当公式渲染
+  // 只认 1~3 位数字，且前后不能紧挨数字/小数点/斜杠，避免误伤日期、编号、连分数
+  const pieces = [];
+  parts.forEach((p) => {
+    if (p.t === "formula") {
+      pieces.push({ t: "formula", v: p.v.replace(/(\d{1,3})\s*\/\s*(\d{1,3})/g, "\\frac{$1}{$2}") });
+      return;
+    }
+    const src = p.v;
+    const RE = /(\d{1,3})\s*\/\s*(\d{1,3})/g;
+    let l = 0, mm;
+    while ((mm = RE.exec(src)) !== null) {
+      const before = src[mm.index - 1];
+      const after = src[mm.index + mm[0].length];
+      if (before && /[\d./]/.test(before)) continue;
+      if (after && /[\d./]/.test(after)) continue;
+      if (mm.index > l) pieces.push({ t: "text", v: src.slice(l, mm.index) });
+      pieces.push({ t: "formula", v: `\\frac{${mm[1]}}{${mm[2]}}` });
+      l = mm.index + mm[0].length;
+    }
+    if (l < src.length) pieces.push({ t: "text", v: src.slice(l) });
+  });
+
+  return <>{pieces.map((p, i) => {
     if (p.t === "formula") {
       try {
         const html = katex.renderToString(p.v, { throwOnError: false, displayMode: false, strict: false });
         return <span key={i} dangerouslySetInnerHTML={{ __html: html }} />;
       } catch { return <span key={i}>{p.v}</span>; }
     }
-    return <span key={i}>{p.v}</span>;
+    // 普通文字：去掉孤立的 $ 符号（可能是 AI 格式不规范的残留）
+    return <span key={i}>{p.v.replace(/\$/g, "")}</span>;
   })}</>;
 }
 
@@ -307,6 +326,16 @@ const PROBLEM_TYPES = {
 
 const ISSUE_COLORS = { "移项符号错误":"#ff4d6d","跳步":"#ff9a3c","计算错误":"#c77dff","去括号错误":"#e05080","漏提公因式":"#ff6b35","分解不彻底":"#e8a030","漏验根":"#9040c8","约分错误":"#40a860","漏解":"#e04060","符号错误":"#ff4d6d","乘法公式错误":"#c8860a","不等号方向错误":"#20a0c0","漏验证":"#c04080","去分母漏乘":"#ff6b35","增根未舍去":"#9040c8","约项错误":"#e05080","运算顺序错误":"#8060c0","绝对值错误":"#8060c0","负数乘方错误":"#8060c0","漏负号":"#ff4d6d","去括号变号错误":"#e05080","乘方括号错误":"#c8860a","负号个数错误":"#ff6b9d","预处理不彻底":"#e8a030","除法转乘法错误":"#3a8ac0","倒数错误":"#e8a030","除法未取倒数":"#3a8ac0" };
 const ISSUE_ICONS  = { "移项符号错误":"±","跳步":"⤵","计算错误":"✗","去括号错误":"()","漏提公因式":"∑","分解不彻底":"◑","漏验根":"✓?","约分错误":"÷","漏解":"②","符号错误":"±","乘法公式错误":"□","不等号方向错误":"≷","漏验证":"?","去分母漏乘":"×","增根未舍去":"⊗","约项错误":"÷","运算顺序错误":"①","绝对值错误":"|x|","负数乘方错误":"²","漏负号":"±","去括号变号错误":"()","乘方括号错误":"²","负号个数错误":"±±","预处理不彻底":"⇢","除法转乘法错误":"÷→×","倒数错误":"1/x","除法未取倒数":"÷→×" };
+// 题型查表容错：AI 偶尔会多写"运算"两字、或多带一个空格，
+// 严格查表会掉进"其他计算题"（步骤条就变空了），所以先做一次归一化再查。
+const normalizeType = (s) => String(s || "").trim().replace(/\s+/g, "").replace(/运算$/, "");
+function getTypeInfo(rawType) {
+  if (PROBLEM_TYPES[rawType]) return PROBLEM_TYPES[rawType];
+  const n = normalizeType(rawType);
+  const hit = Object.keys(PROBLEM_TYPES).find((k) => normalizeType(k) === n);
+  return (hit && PROBLEM_TYPES[hit]) || PROBLEM_TYPES["其他计算题"];
+}
+
 const issueColor = (t) => ISSUE_COLORS[t] || "#74c0fc";
 const issueIcon  = (t) => ISSUE_ICONS[t]  || "!";
 
@@ -466,7 +495,7 @@ function fmtTime(ts) {
 }
 
 function ResultPanel({ result }) {
-  const typeInfo = PROBLEM_TYPES[result.problem_type] || PROBLEM_TYPES["其他计算题"];
+  const typeInfo = getTypeInfo(result.problem_type);
   const stepsToShow = typeInfo.steps.length > 0 ? typeInfo.steps : ["解题步骤"];
   return (
     <div>
@@ -649,7 +678,7 @@ function ParentView() {
             {saved&&<div style={{background:"#e8f0ff",border:"1px solid #a0b8f0",borderRadius:10,padding:"8px 14px",fontSize:12,color:"#3a5aa0",marginBottom:12}}>✓ 已同步至教师后台</div>}
             {result.length>1&&(<div style={{background:"#2a2218",borderRadius:12,padding:"14px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
               <div style={{color:"#f0e8d0",fontSize:14,fontWeight:600}}>共识别 {result.length} 道题</div>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{result.map((p,i)=>{const tc=(PROBLEM_TYPES[p.problem_type]||PROBLEM_TYPES["其他计算题"]).color;return(<div key={i} style={{background:tc+"22",border:"1px solid "+tc+"50",borderRadius:16,padding:"3px 10px",fontSize:11,color:tc,fontWeight:600}}>第{i+1}题 {p.problem_type||"计算题"}{p.issues&&p.issues.length>0?<span style={{marginLeft:5,color:"#ff9a3c"}}>{"×"+p.issues.length}</span>:<span style={{marginLeft:5,color:"#60c060"}}>✓</span>}</div>);})}</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{result.map((p,i)=>{const tc=getTypeInfo(p.problem_type).color;return(<div key={i} style={{background:tc+"22",border:"1px solid "+tc+"50",borderRadius:16,padding:"3px 10px",fontSize:11,color:tc,fontWeight:600}}>第{i+1}题 {p.problem_type||"计算题"}{p.issues&&p.issues.length>0?<span style={{marginLeft:5,color:"#ff9a3c"}}>{"×"+p.issues.length}</span>:<span style={{marginLeft:5,color:"#60c060"}}>✓</span>}</div>);})}</div>
             </div>)}
             {result.map((problem,idx)=>(<div key={idx} style={{marginBottom:20}}>
               {result.length>1&&(<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:28,height:28,borderRadius:"50%",background:"#2a2218",display:"flex",alignItems:"center",justifyContent:"center",color:"#f0e8d0",fontSize:13,fontWeight:700,flexShrink:0}}>{idx+1}</div><div style={{height:"0.5px",flex:1,background:"#e0d0b0"}}/></div>)}
@@ -715,7 +744,7 @@ function TeacherView({ onLogout, password }) {
             <div style={{fontSize:36,marginBottom:10}}>📭</div><div style={{fontSize:14}}>暂无提交记录</div>
           </div>
         ):list.map(item=>{
-          const tc=(PROBLEM_TYPES[item.problemType]||PROBLEM_TYPES["其他计算题"]).color;
+          const tc=getTypeInfo(item.problemType).color;
           return(<div key={item.id}>
             <div onClick={()=>loadDetail(item.id)} style={{background:selected===item.id?"#fff8ee":"#fff",border:"1px solid "+(selected===item.id?"#e8a030":"#e0d0b0"),borderRadius:12,padding:"12px 16px",marginBottom:6,cursor:"pointer",display:"flex",alignItems:"center",gap:12}}>
               <div style={{width:36,height:36,borderRadius:8,background:item.overall==="正确"?"#e0f5e0":"#ffe8e0",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:16,color:item.overall==="正确"?"#3a8a3a":"#c06020",flexShrink:0}}>{item.score}</div>
