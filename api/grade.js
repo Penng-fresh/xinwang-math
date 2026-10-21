@@ -183,6 +183,41 @@ function parseResult(raw) {
   throw new Error("无法解析AI返回内容");
 }
 
+// 从"被截断的 JSON"里抢救出已经写完整的题目对象。
+// 场景：思考把配额吃光时，content 可能是 {"problems":[{...完整...},{...半截
+// 这时宁可把完整的那几道题交回去，也不要让家长看到一个纯报错。
+function salvageProblems(text) {
+  const key = text.indexOf('"problems"');
+  if (key < 0) return [];
+  const lb = text.indexOf("[", key);
+  if (lb < 0) return [];
+  const out = [];
+  let depth = 0, start = -1, inStr = false, esc = false;
+  for (let i = lb + 1; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === "{") { if (depth === 0) start = i; depth++; }
+    else if (c === "}") {
+      depth--;
+      if (depth === 0 && start >= 0) {
+        const chunk = text.slice(start, i + 1);
+        try {
+          const o = JSON.parse(chunk);
+          if (o && (o.problem_type || o.transcription)) out.push(o);
+        } catch (_) {}
+        start = -1;
+      }
+    }
+  }
+  return out;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -211,73 +246,105 @@ export default async function handler(req, res) {
     // 同时受 Vercel 函数时限约束，第一轮耗时过长就不再重试，避免直接超时。
     const START = Date.now();
     const MAX_ATTEMPTS = 2;
-    const RETRY_IF_UNDER_MS = 30000;
+    // 平台侧已在 vercel.json 里给到 300s（实测函数能跑满 200s 不被杀），
+    // 这里给自己留 50s 余量，避免撞墙后连错误信息都返不回来。
+    const TOTAL_BUDGET_MS = 250000;
+    const ATTEMPT_BUDGET_MS = 115000;
 
     let text = "";
     let lastFinish = "";
     let lastUsage = null;
     let lastText = "";
+    let salvaged = [];
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      const response = await fetch(DEEPSEEK_BASE_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${DEEPSEEK_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: DEEPSEEK_MODEL,
-          max_tokens: 16384,
-          temperature: attempt === 1 ? 0.1 : 0.3,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: [
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:${mediaType || "image/jpeg"};base64,${imageBase64}`
-                }
-              },
-              { type: "text", text: "请识别图片中学生的计算题解题过程，判断题型，检查错误，只返回JSON。" }
-            ]}
-          ],
-        }),
-      });
+      const remain = TOTAL_BUDGET_MS - (Date.now() - START);
+      if (attempt > 1 && remain < 45000) break;
+      const budget = Math.min(ATTEMPT_BUDGET_MS, Math.max(remain, 20000));
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        if (response.status === 429) {
-          return res.status(429).json({ error: "AI 服务暂时繁忙，请稍后重试" });
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), budget);
+      let data;
+      try {
+        const response = await fetch(DEEPSEEK_BASE_URL, {
+          method: "POST",
+          signal: ctl.signal,
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${DEEPSEEK_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: DEEPSEEK_MODEL,
+            max_tokens: 32768,
+            temperature: attempt === 1 ? 0.1 : 0.35,
+            messages: [
+              { role: "system", content: SYSTEM_PROMPT },
+              { role: "user", content: [
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: `data:${mediaType || "image/jpeg"};base64,${imageBase64}`
+                  }
+                },
+                { type: "text", text: "请识别图片中学生的计算题解题过程，判断题型，检查错误，只返回JSON。" }
+              ]}
+            ],
+          }),
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          if (response.status === 429) {
+            return res.status(429).json({ error: "AI 服务暂时繁忙，请稍后重试" });
+          }
+          return res.status(502).json({ error: "AI 服务异常: " + (errData?.error?.message || response.statusText) });
         }
-        return res.status(502).json({ error: "AI 服务异常: " + (errData?.error?.message || response.statusText) });
+
+        data = await response.json();
+      } catch (err) {
+        lastFinish = err?.name === "AbortError" ? "client_timeout" : "fetch_error";
+        console.error("[grade] attempt", attempt, "请求异常:", err?.message);
+        continue;
+      } finally {
+        clearTimeout(timer);
       }
 
-      const data = await response.json();
       const choice = data?.choices?.[0];
       lastFinish = choice?.finish_reason || "";
       lastUsage = data?.usage || null;
       lastText = (choice?.message?.content || "").trim();
 
-      // content 为空＝思考把配额吃光了；有内容也要先确认它能解析成 JSON
       if (lastText) {
         try {
           parseResult(lastText);
           text = lastText;
-          break;
+          break;                       // 完整可用，直接收工
         } catch (_) {
-          // JSON 被截断或格式坏，走重试
+          const s = salvageProblems(lastText);   // 截断了，先抢下已写完的题
+          if (s.length > salvaged.length) salvaged = s;
         }
       }
 
-      console.error(`[grade] attempt ${attempt} 失败 finish=${lastFinish} usage=${JSON.stringify(lastUsage)} contentLen=${lastText.length}`);
-
-      if (attempt < MAX_ATTEMPTS && Date.now() - START > RETRY_IF_UNDER_MS) break;
+      console.error(
+        `[grade] attempt ${attempt} 未完成 finish=${lastFinish}` +
+        ` reasoning=${lastUsage?.completion_tokens_details?.reasoning_tokens ?? "-"}` +
+        ` contentLen=${lastText.length} salvaged=${salvaged.length}`
+      );
     }
 
     if (!text) {
+      if (salvaged.length > 0) {
+        // 抢救到几道算几道：至少让家长看到批改结果，而不是一句报错
+        const partial = JSON.stringify({ problems: salvaged });
+        return res.status(200).json({
+          text: partial,
+          problems: salvaged,
+          warning: `图片内容较多，AI 只批改完前 ${salvaged.length} 道。剩下的请把作业分成两张拍，每张 3~4 道题最稳。`
+        });
+      }
       return res.status(502).json({
-        error: "这张图题目较多或字迹偏乱，AI 分析到一半中断了。请把题目分成两张拍，或靠近一点拍清楚再试。",
-        debugRaw: `finish=${lastFinish} usage=${JSON.stringify(lastUsage)} contentLen=${lastText.length}`
+        error: "这张图题目太多或字迹偏乱，AI 没能批改完成。请把作业分成两张拍，每张 3~4 道题，效果最稳。",
+        debugRaw: `finish=${lastFinish} reasoning=${lastUsage?.completion_tokens_details?.reasoning_tokens ?? "-"} contentLen=${lastText.length}`
       });
     }
 
