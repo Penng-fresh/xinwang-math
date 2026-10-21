@@ -1,6 +1,5 @@
 {
   "functions": {
-    "api/grade.js": { "maxDuration": 300 },
-    "api/ping.js": { "maxDuration": 300 }
+    "api/grade.js": { "maxDuration": 300 }
   }
 }
