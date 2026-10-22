@@ -46,9 +46,9 @@ export default function ExamParent({ onBack }) {
         )}
       </div>
 
-      <div style={{ padding: "20px 16px", maxWidth: 680, margin: "0 auto" }}>
+      <div style={{ padding: "20px 16px 90px", maxWidth: 680, margin: "0 auto" }}>
         <div style={{ background: "#fdf3dc", border: "1px solid #e8c870", borderRadius: 10, padding: "12px 16px", marginBottom: 14, fontSize: 13, color: "#7a5a20", lineHeight: 1.8 }}>
-          <b>这一页期中考试后开放。</b>上传入口还没放出来，别急，先把下面的提醒看完。
+          <b>这一页期中考试后开放。</b>上传入口还没放出来，先把下面的提醒看完。
         </div>
 
         <div style={{ background: C.card, borderRadius: 14, border: "1px solid " + C.line, padding: "20px 18px", marginBottom: 14 }}>
@@ -68,13 +68,13 @@ export default function ExamParent({ onBack }) {
         </div>
 
         <div style={{ background: C.card, borderRadius: 14, border: "1px solid " + C.line, padding: "20px 18px", marginBottom: 14 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: C.dark, marginBottom: 10 }}>现在可以做的两件事</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: C.dark, marginBottom: 10 }}>现在麻烦你配合两件事</div>
           <div style={{ fontSize: 13.5, color: "#5a4a30", lineHeight: 2 }}>
             <div style={{ marginBottom: 8 }}>
               <b>1. 答题卡拍照留着。</b>考完学校发下来的答题卡，整张平放拍一张，别折、别卷、别丢。字要看得清，尤其是老师打叉的地方。
             </div>
             <div>
-              <b>2. 别只留分数。</b>只告诉我"考了 82"我没法分析；有答题卡，我才知道他这 18 分丢在哪、为什么丢。
+              <b>2. 别只留分数。</b>只告诉我「考了 82」我没法分析；有答题卡，我才知道他这 18 分丢在哪、为什么丢。
             </div>
           </div>
         </div>
