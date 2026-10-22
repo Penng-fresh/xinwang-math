@@ -15,10 +15,12 @@ import { K, getJSON } from "./lib/store.js";
 // Vercel 请求体上限 4.5MB，base64 会膨胀 1/3，这里留足余量给其它字段
 const MAX_BASE64_CHARS = 3.2 * 1024 * 1024;
 
+// 与老师端按钮上的字保持一致，否则他填的是「讲过」，报告里写「讲过还不熟」，
+// 会怀疑是不是两套东西。
 const LEVEL_NAME = {
   base: "不该丢",
-  mid: "讲过还不熟",
-  hard: "太难，正常",
+  mid: "讲过",
+  hard: "压轴",
 };
 
 function buildSystem(paper) {

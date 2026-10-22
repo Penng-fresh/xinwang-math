@@ -28,11 +28,14 @@ const C = {
   goodBg: "#e8f5e8",
 };
 
+// 按钮上只用两三个字：四个字在这个宽度里会折行，看起来像坏掉了。
+// 完整含义放在表格上方那行说明里。
 const LEVELS = [
   ["base", "不该丢", "#c03030", "#fde8e8"],
-  ["mid", "讲过不熟", "#a06a10", "#fdf3dc"],
+  ["mid", "讲过", "#a06a10", "#fdf3dc"],
   ["hard", "压轴", "#6a6a6a", "#eeeeee"],
 ];
+const LEVEL_HINT = "不该丢 = 应知应会，丢了要补；讲过 = 课上讲过同类，还没练熟；压轴 = 本来就难，丢了正常";
 
 const STATUS_TEXT = { draft: "未开放", open: "已开放", closed: "已结束" };
 
@@ -129,9 +132,11 @@ export default function ExamBuilder({ password }) {
       try {
         const r = await fetch("/api/roster?view=groups&password=" + encodeURIComponent(password));
         const d = await r.json();
-        if (d.ok) {
-          setGroups(d.groups || []);
-          if (d.groups?.[0]) setGid(d.groups[0].gid);
+        // 注意：roster 的分组接口只返回 {groups:[...]}，没有 ok 字段，
+        // 不能按 d.ok 判断，否则永远进 else 分支。
+        if (Array.isArray(d.groups)) {
+          setGroups(d.groups);
+          if (d.groups[0]) setGid(d.groups[0].gid);
         } else setErr(d.error || "读取分组失败");
       } catch (e) {
         setErr("读取分组失败：" + e.message);
@@ -302,6 +307,8 @@ export default function ExamBuilder({ password }) {
             <button onClick={copyPrev} style={{ ...S.btnGhost, padding: "6px 12px", fontSize: 12 }}>从上一场复制</button>
           </div>
 
+          <div style={{ fontSize: 11.5, color: C.dim, lineHeight: 1.7, marginBottom: 10 }}>{LEVEL_HINT}</div>
+
           <div style={{ borderTop: "1px solid " + C.line, paddingTop: 10 }}>
             {rows.map((r, i) => (
               <div key={r.key} style={{ display: "grid", gridTemplateColumns: "1.5fr 62px 1.6fr 26px", gap: 8, alignItems: "center", marginBottom: 8 }}>
@@ -418,7 +425,7 @@ export default function ExamBuilder({ password }) {
               <div style={{ flex: 1, minWidth: 180 }}>
                 <div style={{ fontSize: 14, fontWeight: 600, color: C.dark, marginBottom: 3 }}>{e.name}</div>
                 <div style={{ fontSize: 11.5, color: C.dim }}>
-                  {e.date || "未填日期"} · {e.sectionCount} 个大题 · 满分 {e.totalScore || "—"}
+                  {e.date || "未填日期"} · {e.sectionCount ? e.sectionCount + " 个大题 · 满分 " + e.totalScore : "还没填卷子结构"}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
