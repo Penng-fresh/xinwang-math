@@ -10,6 +10,7 @@
 //   对不上就重试一次，再对不上宁可标"待核对"，也不硬编。
 
 import { visionJSON, aiConfigured } from "./lib/ai.js";
+import { K, getJSON } from "./lib/store.js";
 
 // Vercel 请求体上限 4.5MB，base64 会膨胀 1/3，这里留足余量给其它字段
 const MAX_BASE64_CHARS = 3.2 * 1024 * 1024;
@@ -165,14 +166,25 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "请求格式不对" });
   }
 
-  const { imageBase64, mediaType = "image/jpeg", paper } = body || {};
+  const { imageBase64, mediaType = "image/jpeg", examId } = body || {};
+  let paper = body?.paper;
 
   if (!imageBase64) return res.status(400).json({ error: "没有收到图片" });
   if (imageBase64.length > MAX_BASE64_CHARS) {
     return res.status(413).json({ error: "图片太大了，请重新拍一张或压缩后再传" });
   }
+
+  // 正式流程走 examId：卷子结构存在服务端，家长端拿不到也改不了。
+  // 传 paper 只留给本地调试用。
+  if (examId) {
+    const exam = await getJSON(K.exam(String(examId)));
+    if (!exam) return res.status(404).json({ error: "找不到这场考试" });
+    if (exam.status === "closed") return res.status(403).json({ error: "这场考试已经关闭，不能再上传" });
+    paper = exam.paper;
+  }
+
   if (!paper || !Array.isArray(paper.sections) || paper.sections.length === 0) {
-    return res.status(400).json({ error: "缺少卷子结构（这份卷子有哪些大题、各多少分）" });
+    return res.status(400).json({ error: "这场考试还没填卷子结构，暂时不能分析" });
   }
   for (const s of paper.sections) {
     if (!s.key || typeof s.fullScore !== "number" || s.fullScore <= 0) {
