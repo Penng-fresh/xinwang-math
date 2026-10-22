@@ -617,7 +617,7 @@ function ParentView({ onGoExam }) {
           <div style={{fontSize:10,letterSpacing:3,color:"#6a5a3a",marginBottom:2}}>信望数理 · 彭老师</div>
           <div style={{fontSize:18,fontWeight:700,color:"#f0e8d0"}}>计算题解题检查</div>
         </div>
-        {onGoExam&&<button onClick={onGoExam} style={{background:"transparent",border:"1px solid rgba(240,232,208,0.25)",color:"#d0c0a0",borderRadius:16,padding:"6px 14px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>考试分析 ›</button>}
+        {onGoExam&&<button onClick={onGoExam} style={{background:"transparent",border:"1px solid rgba(240,232,208,0.25)",color:"#d0c0a0",borderRadius:16,padding:"6px 14px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>考试答题卡上传 ›</button>}
       </div>
       <div style={{padding:"20px 16px",maxWidth:680,margin:"0 auto"}}>
         <div style={{background:"#fdf3dc",border:"1px solid #e8c870",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12.5,color:"#7a5a20",lineHeight:1.8}}>

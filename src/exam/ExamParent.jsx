@@ -1,6 +1,6 @@
-// 考试分析（家长端）—— 目前是「期中后开放」的说明页
+// 考试答题卡上传（家长端）—— 目前是「期中后开放」的说明页
 //
-// 为什么先把这个空页面放出来：家长页头上那句「考试分析」如果点了没反应，
+// 为什么先把这个空页面放出来：家长页头上那句「考试答题卡上传」如果点了没反应，
 // 家长会以为坏了；点了进去看到一句「期中后开放」，反而会记住这件事，
 // 也会顺手把答题卡拍照留好——这正是我期中最需要家长配合的地方。
 //
@@ -34,7 +34,7 @@ export default function ExamParent({ onBack }) {
       <div style={{ background: C.dark, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
           <div style={{ fontSize: 10, letterSpacing: 3, color: "#6a5a3a", marginBottom: 2 }}>信望数理 · 彭老师</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: C.cream }}>考试分析</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: C.cream }}>考试答题卡上传</div>
         </div>
         {onBack && (
           <button
