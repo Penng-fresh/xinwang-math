@@ -17,13 +17,24 @@ async function redisCmd(cmd) {
   if (!url || !token) {
     throw new Error("服务器未配置 UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN，请在 Vercel 项目设置里添加这两个环境变量");
   }
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-    body: JSON.stringify(cmd)
-  });
+  let host = "(URL 无法解析)";
+  try { host = new URL(url).host; } catch (_) { host = String(url).slice(0, 60); }
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify(cmd)
+    });
+  } catch (e) {
+    // fetch 在网络层就挂了（DNS 解析不了 / TLS 失败 / 地址非法）。
+    // 只报一句 "fetch failed" 没法定位，所以把实际用的 host 和底层错误码带出来。
+    const code = e?.cause?.code || e?.cause?.errno || "";
+    throw new Error(`连不上 Upstash（host=${host}${code ? "，code=" + code : ""}）：${e.message}`);
+  }
   const data = await res.json().catch(() => ({}));
-  if (data.error) throw new Error(data.error);
+  if (data.error) throw new Error(`${data.error}（host=${host}）`);
   return data.result;
 }
 
