@@ -49,6 +49,17 @@ export const K = {
   subIdx: () => ns() + "sub:idx",
   subSum: () => ns() + "sub:sum",
 
+  // 答题卡（家长上传的整张卷子照片）。
+  // 图片字节不放在 meta 里：一张 2000px 的照片 base64 就有 50 万字符，
+  // 塞进 JSON 会让每次读列表都把几十兆读一遍。图片切片单独存一个 list，
+  // 列表页永远不碰它，只有点开某一份时才按需取。
+  sheet: (id) => ns() + "sheet:" + id,
+  sheetImg: (id, n) => ns() + "sheet:" + id + ":img:" + n,
+  sheetIdx: () => ns() + "sheet:idx",
+  groupSheets: (gid) => ns() + "group:" + gid + ":sheets",
+  examSheets: (examId) => ns() + "exam:" + examId + ":sheets",
+  studentSheets: (sid) => ns() + "student:" + sid + ":sheets",
+
   schoolSubs: (school) => ns() + "school:" + school + ":subs",
   schools: () => ns() + "schools"
 };

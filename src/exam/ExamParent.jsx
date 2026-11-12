@@ -1,30 +1,39 @@
-// 考试答题卡上传（家长端）—— 目前是「期中后开放」的说明页
+// 考试答题卡上传（家长端整页）
 //
-// 为什么先把这个空页面放出来：家长页头上那句「考试答题卡上传」如果点了没反应，
-// 家长会以为坏了；点了进去看到一句「期中后开放」，反而会记住这件事，
-// 也会顺手把答题卡拍照留好——这正是我期中最需要家长配合的地方。
+// 顺序是刻意的：上传框放在最上面，说明文字全部压在下面。
+// 家长进来是要办事的，不是来读说明的；把说明放前面，滑动两屏才能看到按钮。
 //
-// 内容上故意写得很短，且只说三件不会打脸的话：
-//   1. 分数和章节失分，智学网上有，这里不重复
-//   2. 这里只说丢的分属于哪一类（概念 / 中档 / 压轴）
-//   3. 家长现在能做的事：答题卡拍照留着
-// 等功能真上线了，这个文件的正文会被上传入口替换掉，壳子不用动。
+// 页面上必须说清三件事，其余一律不写：
+//   1. 现在只能收，还出不了分析，以及为什么（卷子难度还没分好类）
+//   2. 以后会看到什么（该会没会 / 讲过没练熟 / 压轴本来就难）
+//   3. 压轴题多数孩子做不出来，这是正常的 —— 这句一定要说，
+//      否则家长看到一屏红叉只会焦虑，然后逼孩子刷压轴题，方向全错
+//
+// 这一页不写排名、不写平均分、不跟别人比。
 
 import { useState } from "react";
+import ExamUpload from "./ExamUpload.jsx";
 
 const C = {
   dark: "#2a2218",
   bg: "#f5f0e8",
   card: "#fff",
   soft: "#faf6ee",
-  accent: "#e8a030",
   border: "#e0d0b0",
   line: "#e8d0a0",
-  muted: "#8a7a5a",
   dim: "#a08060",
   cream: "#f0e8d0",
   cream2: "#d0c0a0"
 };
+
+function Card({ title, children }) {
+  return (
+    <div style={{ background: C.card, borderRadius: 14, border: "1px solid " + C.line, padding: "18px 16px", marginTop: 14 }}>
+      <div style={{ fontSize: 15, fontWeight: 600, color: C.dark, marginBottom: 10 }}>{title}</div>
+      <div style={{ fontSize: 13.5, color: "#5a4a30", lineHeight: 2 }}>{children}</div>
+    </div>
+  );
+}
 
 export default function ExamParent({ onBack }) {
   const [showDetail, setShowDetail] = useState(false);
@@ -46,53 +55,57 @@ export default function ExamParent({ onBack }) {
         )}
       </div>
 
-      <div style={{ padding: "20px 16px 90px", maxWidth: 680, margin: "0 auto" }}>
-        <div style={{ background: "#fdf3dc", border: "1px solid #e8c870", borderRadius: 10, padding: "12px 16px", marginBottom: 14, fontSize: 13, color: "#7a5a20", lineHeight: 1.8 }}>
-          <b>这一页期中考试后开放。</b>上传入口还没放出来，先把下面的提醒看完。
-        </div>
+      <div style={{ padding: "16px 16px 90px", maxWidth: 680, margin: "0 auto" }}>
+        <ExamUpload />
 
-        <div style={{ background: C.card, borderRadius: 14, border: "1px solid " + C.line, padding: "20px 18px", marginBottom: 14 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: C.dark, marginBottom: 12 }}>它和智学网不重复</div>
-          <div style={{ fontSize: 13.5, color: "#5a4a30", lineHeight: 2 }}>
-            <div style={{ marginBottom: 8 }}>分数多少、哪一章失分，智学网上写得比这里清楚，这里不再说一遍。</div>
-            <div style={{ marginBottom: 8 }}>
-              这里说的是另一件事：<b>丢掉的这些分，到底属于哪一种</b>——
-            </div>
-            <div style={{ background: C.soft, border: "1px solid " + C.border, borderRadius: 10, padding: "12px 14px", marginBottom: 8, fontSize: 13, color: "#5a4a30", lineHeight: 2 }}>
-              <div>① 基本概念有盲点 —— 该会没会</div>
-              <div>② 中档题的套路缺了一块 —— 会，但做不顺</div>
-              <div>③ 压轴题本来就难 —— 大部分人都拿不到</div>
-            </div>
-            <div>三道题都扣 3 分，可这三种完全不是一回事。第一种要回课本，第二种要练手感，第三种可以暂时放下——先补哪一块，家长和我就不会各猜各的。</div>
+        <Card title="现在只收，还出不了分析">
+          <div style={{ marginBottom: 8 }}>
+            先说实话：现在传上来，我<strong>只能收着</strong>，还没法给你出分析。
           </div>
-        </div>
+          <div style={{ marginBottom: 8 }}>
+            要给一份卷子下判断——哪些分是该会没会的、哪些是练得不熟的——我得先把这套卷子从头到尾做一遍，把每道题的难度分好类。这件事没法提前做，得等卷子到手。
+          </div>
+          <div>但答题卡等不了。考完那阵子还在，过两周就找不着了。所以先传，卷子理顺了我一起算。</div>
+        </Card>
 
-        <div style={{ background: C.card, borderRadius: 14, border: "1px solid " + C.line, padding: "20px 18px", marginBottom: 14 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: C.dark, marginBottom: 10 }}>现在麻烦你配合两件事</div>
-          <div style={{ fontSize: 13.5, color: "#5a4a30", lineHeight: 2 }}>
-            <div style={{ marginBottom: 8 }}>
-              <b>1. 答题卡拍照留着。</b>考完学校发下来的答题卡，整张平放拍一张，别折、别卷、别丢。字要看得清，尤其是老师打叉的地方。
-            </div>
-            <div>
-              <b>2. 别只留分数。</b>只告诉我「考了 82」我没法分析；有答题卡，我才知道他这 18 分丢在哪、为什么丢。
-            </div>
+        <Card title="能出分析之后，你会看到的是这三类">
+          <div style={{ background: C.soft, border: "1px solid " + C.border, borderRadius: 10, padding: "12px 14px", marginBottom: 10, lineHeight: 2.1 }}>
+            <div>① <strong>该会没会</strong> —— 应知应会，丢了必须补</div>
+            <div>② <strong>讲过、还没练熟</strong> —— 课上有同类，缺的是手感</div>
+            <div>③ <strong>压轴本来就难</strong> —— 大部分孩子拿不到</div>
           </div>
-        </div>
+          <div style={{ marginBottom: 8 }}>
+            三道题都扣 3 分，可这三回事完全不同：第一种要回课本，第二种要练，第三种可以先放下。
+          </div>
+          <div style={{ background: "#fdf3dc", border: "1px solid #e8c870", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#7a5a20", lineHeight: 1.9 }}>
+            第③类我要多说一句：<strong>压轴题多数孩子做不出来，这是正常的。</strong>看到一屏红叉先别急，方向要是搞反了，越使劲越费孩子。
+          </div>
+        </Card>
+
+        <Card title="拍的时候注意三件事">
+          <div style={{ marginBottom: 8 }}><strong>1. 整张平放。</strong>别折、别卷、别斜着拍，四个角尽量都进画面。</div>
+          <div style={{ marginBottom: 8 }}><strong>2. 光线足一点。</strong>别背光，手别挡住卷子。</div>
+          <div><strong>3. 老师打的叉、写的分要看得清。</strong>这是最关键的——他错在哪一步，全在这些痕迹里。</div>
+        </Card>
 
         <div style={{ textAlign: "center" }}>
           <button
             onClick={() => setShowDetail(!showDetail)}
-            style={{ background: "transparent", border: "none", color: C.dim, fontSize: 12, cursor: "pointer", padding: "8px 12px", fontFamily: "inherit" }}
+            style={{ background: "transparent", border: "none", color: C.dim, fontSize: 12, cursor: "pointer", padding: "10px 12px", fontFamily: "inherit" }}
           >
-            {showDetail ? "收起" : "这项功能具体怎么用"}
+            {showDetail ? "收起" : "为什么不用智学网那套"}
           </button>
         </div>
 
         {showDetail && (
-          <div style={{ background: C.soft, border: "1px solid " + C.border, borderRadius: 12, padding: "16px 16px", marginTop: 6, fontSize: 13, color: "#5a4a30", lineHeight: 2 }}>
-            <div style={{ marginBottom: 8 }}>每次考完，我会拿到这次的卷子和答案，把每道题按难度分好类。你上传答题卡之后，系统对照答案看他错的是哪几题，再按上面的三类算一遍。</div>
-            <div style={{ marginBottom: 8 }}>你看到的只有三样东西：<b>他的分数</b>、<b>丢的分属于哪一类</b>、<b>错的是第几题</b>。不给排名，不给平均分，也不跟别人比。</div>
-            <div>答案是我核对过的，不是 AI 猜的；AI 只负责看他答题卡上写了什么。这一步一旦出错，整个分析就废了，所以我宁可慢一点。</div>
+          <div style={{ background: C.soft, border: "1px solid " + C.border, borderRadius: 12, padding: "16px 16px", marginTop: 4, fontSize: 13, color: "#5a4a30", lineHeight: 2 }}>
+            <div style={{ marginBottom: 8 }}>
+              分数多少、哪一章失分，智学网上写得比这里清楚，这里不再说一遍。
+            </div>
+            <div style={{ marginBottom: 8 }}>
+              这里说的是另一件事：<strong>丢掉的这些分，到底属于哪一种</strong>。智学网给的是"第几题扣了几分"，给不了"这几分该不该丢"——那要靠老师对这道题的判断。
+            </div>
+            <div>你看到的只有三样：<strong>他的分数</strong>、<strong>丢的分属于哪一类</strong>、<strong>错的是第几题</strong>。不给排名，不给平均分，也不跟别人比。</div>
           </div>
         )}
 

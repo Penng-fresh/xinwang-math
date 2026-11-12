@@ -4,6 +4,7 @@ import "katex/dist/katex.min.css";
 import ExamRoster from "./exam/ExamRoster.jsx";
 import ExamBuilder from "./exam/ExamBuilder.jsx";
 import ExamParent from "./exam/ExamParent.jsx";
+import SheetInbox from "./exam/SheetInbox.jsx";
 
 // MathText：把 AI 返回的混合文本（中文 + LaTeX 公式）渲染成可读排版。
 // AI 有时会用 $...$ 包裹公式（如 $\frac{1}{2}$），有时直接裸写 \frac{1}{2}，
@@ -703,7 +704,7 @@ function TeacherView({ onLogout, password }) {
   const [detail,setDetail]=useState(null);
   const [loadingDetail,setLoadingDetail]=useState(false);
   const [listError,setListError]=useState("");
-  const [tab,setTab]=useState("subs"); // subs=作业批改 | roster=学生名单 | exam=考试
+  const [tab,setTab]=useState("subs"); // subs=作业批改 | roster=学生名单 | exam=考试 | sheets=答题卡
   useEffect(()=>{loadList();},[]);
   const loadList=async()=>{
     setListError("");
@@ -743,8 +744,8 @@ function TeacherView({ onLogout, password }) {
         </div>
       </div>
       <div style={{padding:"20px 16px",maxWidth:680,margin:"0 auto"}}>
-        <div style={{display:"flex",gap:6,marginBottom:14}}>{[["subs","作业批改"],["roster","学生名单"],["exam","考试"]].map(([k,label])=>(<button key={k} onClick={()=>setTab(k)} style={{flex:1,background:tab===k?"#2a2218":"#fff",color:tab===k?"#f0e8d0":"#8a7a5a",border:"1px solid "+(tab===k?"#2a2218":"#e0d0b0"),borderRadius:9,padding:"9px 0",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:tab===k?700:400}}>{label}</button>))}</div>
-        {tab==="roster"?<ExamRoster password={password}/>:tab==="exam"?<ExamBuilder password={password}/>:<>
+        <div style={{display:"flex",gap:6,marginBottom:14}}>{[["subs","作业批改"],["roster","学生名单"],["exam","考试"],["sheets","答题卡"]].map(([k,label])=>(<button key={k} onClick={()=>setTab(k)} style={{flex:1,background:tab===k?"#2a2218":"#fff",color:tab===k?"#f0e8d0":"#8a7a5a",border:"1px solid "+(tab===k?"#2a2218":"#e0d0b0"),borderRadius:9,padding:"9px 0",fontSize:12.5,cursor:"pointer",fontFamily:"inherit",fontWeight:tab===k?700:400}}>{label}</button>))}</div>
+        {tab==="roster"?<ExamRoster password={password}/>:tab==="exam"?<ExamBuilder password={password}/>:tab==="sheets"?<SheetInbox password={password}/>:<>
         {listError&&<div style={{background:"#fde8e8",border:"1px solid #f0a0a0",borderRadius:10,padding:"10px 14px",color:"#a03030",fontSize:13,marginBottom:12}}>⚠ {listError}</div>}
         {list.length===0?(
           <div style={{textAlign:"center",padding:"40px 20px",color:"#8a7a5a",background:"#faf6ee",borderRadius:14,border:"1px dashed #c8b898"}}>
