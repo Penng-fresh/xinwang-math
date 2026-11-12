@@ -9,8 +9,8 @@
 // 一场考试在打开之前，家长端看不到它（status=draft）。老师填完卷子结构、
 // 确认满分合计对得上，才点「开放」。这跟"确定能用才告诉家长"是一个道理。
 
-import { guardTeacher } from "./lib/auth.js";
-import { K, ns, redisPipe, redisCmd, getJSON, newId } from "./lib/store.js";
+import { guardTeacher } from "../lib/auth.js";
+import { K, ns, redisPipe, redisCmd, getJSON, newId } from "../lib/store.js";
 
 const LEVELS = ["base", "mid", "hard"];
 const STATUSES = ["draft", "open", "closed"];

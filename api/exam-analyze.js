@@ -9,8 +9,8 @@
 //   这些数字可以互相校验：各大题得分相加必须等于总分。
 //   对不上就重试一次，再对不上宁可标"待核对"，也不硬编。
 
-import { visionJSON, aiConfigured } from "./lib/ai.js";
-import { K, getJSON } from "./lib/store.js";
+import { visionJSON, aiConfigured } from "../lib/ai.js";
+import { K, getJSON } from "../lib/store.js";
 
 // Vercel 请求体上限 4.5MB，base64 会膨胀 1/3，这里留足余量给其它字段
 const MAX_BASE64_CHARS = 3.2 * 1024 * 1024;

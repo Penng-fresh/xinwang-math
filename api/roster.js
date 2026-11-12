@@ -31,9 +31,9 @@ import {
   setHash,
   getHash,
   newId
-} from "./lib/store.js";
-import { guardTeacher } from "./lib/auth.js";
-import { parseNames, dedupeName } from "./lib/names.js";
+} from "../lib/store.js";
+import { guardTeacher } from "../lib/auth.js";
+import { parseNames, dedupeName } from "../lib/names.js";
 
 // ── 学生读写 ────────────────────────────────────────────
 

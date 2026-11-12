@@ -21,8 +21,8 @@
 //   GET  ?view=mine&sid=       家长端：这个学生已经传了几份
 //   DELETE { id, password }    老师端：删除一份
 
-import { guardTeacher } from "./lib/auth.js";
-import { K, redisCmd, redisPipe, getJSON, newId } from "./lib/store.js";
+import { guardTeacher } from "../lib/auth.js";
+import { K, redisCmd, redisPipe, getJSON, newId } from "../lib/store.js";
 
 // 一次最多三张：期中数学答题卡通常 A4 双面或 A3 单面，三张足够。
 // 不放大是因为 Vercel 函数请求体上限 4.5MB，前端压到 ~70 万字符一张，
