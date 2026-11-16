@@ -107,6 +107,9 @@ async function listGroupMembers(gid, withSummary) {
       sid: s.sid,
       name: s.name,
       displayName: s.displayName,
+      // 学校是学生的属性，老师得在名单里看见家长填了什么
+      school: s.school || "",
+      grade: s.grade || "",
       subCount: s.subCount || 0,
       createdAt: s.createdAt
     }));
