@@ -1,9 +1,15 @@
 // 答题卡收件箱：老师端「答题卡」页签
 //
+// 两个视角，顶部切换：
+//   按学生 —— 一个孩子一行，点开是这学期交过的每一次。这是唯一能看出
+//             "这个孩子这两次都交了没"的视角，逐份清单看不出来。
+//   按提交 —— 按收到时间倒序，用来核对"群里说传完了的那几个，到底传上没有"。
+//
 // 这一版只做「看收到了什么」，不做分析。但有两个信息是老师现在就要的，
 // 少了这个页面就等于白收：
-//   1) 这个班谁还没传 —— 追家长只能靠这个名单，靠翻聊天记录会漏人
-//   2) 原件能下载下来 —— 分析在本地跑（图片识别成本、可复核），
+//   1) 这个班谁没交 —— 追家长只能靠这个，靠翻聊天记录会漏人；
+//      不预导名单，所以这里的"没交"是"上次交过、这次没交"，不是"从没交过"
+//   2) 原件能下载下来 —— 分析在本地跑（识别成本、可复核），
 //      所以必须能把 jpg 落到硬盘上，不能只能在线看
 //
 // 列表永远不取图片字节：一份 2000px 的答题卡 base64 有 50 万字符，
@@ -15,6 +21,7 @@ import ExamUpload from "./ExamUpload.jsx";
 const C = {
   dark: "#2a2218",
   bg: "#f5f0e8",
+  cream: "#fff8ee",
   card: "#fff",
   soft: "#faf6ee",
   accent: "#e8a030",
@@ -35,6 +42,12 @@ function when(ts) {
   return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+function dayOf(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
 // base64 → Blob。PDF 不能在 <img> 里显示，只能转成 blob URL 让浏览器自己打开。
 function b64ToBlobUrl(b64, mediaType) {
   const bin = atob(b64);
@@ -43,7 +56,7 @@ function b64ToBlobUrl(b64, mediaType) {
   return URL.createObjectURL(new Blob([bytes], { type: mediaType || "application/octet-stream" }));
 }
 
-// 列表上那个小方块：有多页就看份数，有 PDF 就直接写 PDF
+// 列表上那个小方块：有 PDF 就直接写 PDF，否则写份数
 function badgeOf(s) {
   const kinds = s.kinds || [];
   if (kinds.length === 0) return "?";
@@ -51,32 +64,88 @@ function badgeOf(s) {
   return String(s.imageCount);
 }
 
+function kindText(s) {
+  const kinds = s.kinds || [];
+  if (kinds.includes("pdf")) return kinds.length > 1 ? `${kinds.length} 份（含 PDF）` : "PDF 原卷";
+  return `${s.imageCount || 0} 张`;
+}
+
+// 展开后的一组图片（或 PDF）。两个视角共用同一段渲染，
+// 免得改一处忘一处——上一版这里就分叉过一次。
+function SheetImages({ sheet, data, busy, onRemove }) {
+  if (busy) return <div style={{ fontSize: 12.5, color: C.dim, padding: "12px 0" }}>正在取图…</div>;
+  if (!data) return null;
+  if (data.error) return <div style={{ fontSize: 12.5, color: C.danger, padding: "12px 0" }}>⚠ {data.error}</div>;
+  if (!Array.isArray(data)) return null;
+
+  return data.map((im, i) => {
+    const isPdf = im.mediaType === "application/pdf";
+    const href = isPdf ? im.blobUrl : im.dataUrl;
+    const fileName = `${sheet.studentName || "答题卡"}-${sheet.examName || "未指定考试"}-${i + 1}.${isPdf ? "pdf" : "jpg"}`;
+    return (
+      <div key={i} style={{ marginTop: 12 }}>
+        {isPdf ? (
+          <div style={{ border: "1px solid " + C.line, background: C.soft, borderRadius: 8, padding: "14px", textAlign: "center" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#b04a30", letterSpacing: 1 }}>PDF</div>
+            <div style={{ fontSize: 11.5, color: C.dim, marginTop: 4, lineHeight: 1.8 }}>PDF 不能直接预览，点「打开」用浏览器看</div>
+          </div>
+        ) : (
+          <img src={im.dataUrl} alt={"第" + (i + 1) + "页"} style={{ width: "100%", borderRadius: 8, border: "1px solid " + C.line, display: "block", background: "#fff" }} />
+        )}
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <a href={href} target="_blank" rel="noreferrer" style={{ flex: 1, textAlign: "center", background: C.dark, color: C.cream, borderRadius: 9, padding: "9px 0", fontSize: 12.5, textDecoration: "none" }}>
+            {isPdf ? "打开" : "看原图"}
+          </a>
+          <a href={href} download={fileName} style={{ flex: 1, textAlign: "center", background: C.soft, border: "1px solid " + C.line, color: "#7a6a4a", borderRadius: 9, padding: "9px 0", fontSize: 12.5, textDecoration: "none" }}>
+            下载
+          </a>
+          {onRemove && (
+            <button onClick={onRemove} style={{ background: "transparent", border: "1px solid #e0a0a0", color: C.danger, borderRadius: 9, padding: "9px 14px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>
+              删除
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  });
+}
+
 export default function SheetInbox({ password }) {
   const [catalog, setCatalog] = useState([]);
   const [gid, setGid] = useState("");
-  const [sheets, setSheets] = useState([]);
+  const [mode, setMode] = useState("student"); // student | sheet
+  const [students, setStudents] = useState([]); // 按人的聚合
+  const [sheets, setSheets] = useState([]); // 逐份
   const [stats, setStats] = useState({ count: 0, students: 0 });
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
-  const [openId, setOpenId] = useState("");
+  const [openId, setOpenId] = useState(""); // 展开的某一份（两个视角共用）
+  const [openSid, setOpenSid] = useState(""); // 按学生视角里展开的那个学生
   const [showUpload, setShowUpload] = useState(false);
   const [imgs, setImgs] = useState({}); // id -> [{dataUrl}] 或 {error}
   const [imgBusy, setImgBusy] = useState("");
 
-  const load = async (filterGid) => {
+  const load = async (filterGid, wantMode) => {
+    const m = wantMode || mode;
     setLoading(true);
     setErr("");
     try {
       const q = filterGid ? "&gid=" + encodeURIComponent(filterGid) : "";
-      const r = await fetch("/api/answer-sheets?view=list" + q + "&password=" + encodeURIComponent(password));
+      const view = m === "student" ? "students" : "list";
+      const r = await fetch(`/api/answer-sheets?view=${view}` + q + "&password=" + encodeURIComponent(password));
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d?.error || "读取失败");
-      setSheets(Array.isArray(d.sheets) ? d.sheets : []);
+      if (m === "student") {
+        setStudents(Array.isArray(d.students) ? d.students : []);
+      } else {
+        setSheets(Array.isArray(d.sheets) ? d.sheets : []);
+      }
       setStats(d.stats || { count: 0, students: 0 });
     } catch (e) {
       setErr(e.message || "读取失败");
+      setStudents([]);
       setSheets([]);
       setStats({ count: 0, students: 0 });
     } finally {
@@ -92,10 +161,10 @@ export default function SheetInbox({ password }) {
         if (r.ok && Array.isArray(d.schools)) setCatalog(d.schools);
       } catch (_) {}
     })();
-    load("");
+    load("", "student");
   }, []);
 
-  // 选了班级就顺带读这个班的名单，用来算「谁还没传」
+  // 选了班级就顺带读这个班的名单，用来算「上次交了这次没交」
   useEffect(() => {
     setMembers([]);
     if (!gid) return;
@@ -114,9 +183,9 @@ export default function SheetInbox({ password }) {
 
   const missing = useMemo(() => {
     if (!gid || members.length === 0) return [];
-    const got = new Set(sheets.map((s) => s.sid));
+    const got = new Set(students.map((s) => s.sid));
     return members.filter((m) => !got.has(m.sid));
-  }, [gid, members, sheets]);
+  }, [gid, members, students]);
 
   const openSheet = async (s) => {
     if (openId === s.id) {
@@ -149,7 +218,7 @@ export default function SheetInbox({ password }) {
   };
 
   const remove = async (s, e) => {
-    e.stopPropagation();
+    if (e) e.stopPropagation();
     if (!confirm(`删除 ${s.studentName} 的这份答题卡（${s.imageCount} 张）？删了就找不回来了。`)) return;
     try {
       const r = await fetch("/api/answer-sheets", {
@@ -159,8 +228,32 @@ export default function SheetInbox({ password }) {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d?.error || "删除失败");
-      setSheets((cur) => cur.filter((x) => x.id !== s.id));
+
+      // 两个视角各改各的。统计从改完的列表重算，不手工加减 ——
+      // 手工减过一次「涉及学生数」，删最后一份的时候多减了一个。
+      const leftSheets = sheets.filter((x) => x.id !== s.id);
+      // 按学生视角要连带改次数，次数归零的学生整行去掉
+      const leftStudents = students
+        .map((g) => {
+          const keep = g.sheets.filter((x) => x.id !== s.id);
+          return { ...g, sheets: keep, count: keep.length };
+        })
+        .filter((g) => g.count > 0);
+
+      setSheets(leftSheets);
+      setStudents(leftStudents);
+      setStats(
+        mode === "student"
+          ? { students: leftStudents.length, count: leftStudents.reduce((n, g) => n + g.count, 0) }
+          : { count: leftSheets.length, students: new Set(leftSheets.map((x) => x.sid)).size }
+      );
+
       if (openId === s.id) setOpenId("");
+      setImgs((cur) => {
+        const next = { ...cur };
+        delete next[s.id];
+        return next;
+      });
     } catch (err2) {
       alert("删除失败：" + (err2.message || "网络问题"));
     }
@@ -168,6 +261,28 @@ export default function SheetInbox({ password }) {
 
   // 分组名一般已经写了年级（初一秋季班），再把 grade 拼上去会出现「初一 初一秋季班」
   const classLabel = (s) => [s.school, s.groupName].filter(Boolean).join(" ");
+
+  const tabStyle = (active) => ({
+    flex: 1,
+    padding: "8px 0",
+    fontSize: 12.5,
+    fontFamily: "inherit",
+    cursor: "pointer",
+    borderRadius: 8,
+    border: "1px solid " + (active ? C.dark : "transparent"),
+    background: active ? C.dark : "transparent",
+    color: active ? C.cream : "#8a7a5a"
+  });
+
+  const emptyHint = (
+    <div style={{ textAlign: "center", padding: "40px 20px", color: C.muted, background: C.soft, borderRadius: 14, border: "1px dashed #c8b898" }}>
+      <div style={{ fontSize: 34, marginBottom: 10 }}>📭</div>
+      <div style={{ fontSize: 14 }}>还没有收到答题卡</div>
+      <div style={{ fontSize: 12, color: C.dim, marginTop: 8, lineHeight: 1.9 }}>
+        把 xinwang-math.com 的「考试答题卡上传」链接发群里，<br />家长填名字、拍照就传上来了。<br />家长直接发你微信的 PDF，点上面的「我自己补传」拖进来。
+      </div>
+    </div>
+  );
 
   return (
     <div>
@@ -178,6 +293,7 @@ export default function SheetInbox({ password }) {
             onChange={(e) => {
               setGid(e.target.value);
               setOpenId("");
+              setOpenSid("");
               load(e.target.value);
             }}
             style={{ flex: 1, minWidth: 160, padding: "9px 10px", fontSize: 13, fontFamily: "inherit", color: C.dark, background: C.soft, border: "1px solid " + C.line, borderRadius: 9, outline: "none" }}
@@ -192,7 +308,9 @@ export default function SheetInbox({ password }) {
             )}
           </select>
           <button
-            onClick={() => setShowUpload((v) => !v)}
+            onClick={() => {
+              setShowUpload((v) => !v);
+            }}
             style={{ background: showUpload ? C.dark : C.soft, border: "1px solid " + (showUpload ? C.dark : C.line), color: showUpload ? C.cream : "#7a6a4a", borderRadius: 9, padding: "9px 14px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
           >
             {showUpload ? "收起" : "＋ 我自己补传"}
@@ -204,9 +322,48 @@ export default function SheetInbox({ password }) {
             🔄 刷新
           </button>
         </div>
+
+        <div style={{ display: "flex", gap: 6, marginTop: 10, background: C.soft, border: "1px solid " + C.line, borderRadius: 10, padding: 4 }}>
+          <button
+            onClick={() => {
+              setMode("student");
+              setOpenId("");
+              setOpenSid("");
+              load(gid, "student");
+            }}
+            style={tabStyle(mode === "student")}
+          >
+            按学生
+          </button>
+          <button
+            onClick={() => {
+              setMode("sheet");
+              setOpenId("");
+              setOpenSid("");
+              load(gid, "sheet");
+            }}
+            style={tabStyle(mode === "sheet")}
+          >
+            按提交
+          </button>
+        </div>
+
         <div style={{ fontSize: 12, color: C.dim, marginTop: 10, lineHeight: 1.9 }}>
-          已收 <b style={{ color: C.dark }}>{stats.count}</b> 份，涉及 <b style={{ color: C.dark }}>{stats.students}</b> 名学生。
-          {missing.length > 0 && <> 这个班还有 <b style={{ color: C.danger }}>{missing.length}</b> 人一份都没传。</>}
+          {mode === "student" ? (
+            <>
+              共 <b style={{ color: C.dark }}>{stats.students}</b> 名学生交过，累计 <b style={{ color: C.dark }}>{stats.count}</b> 份。
+            </>
+          ) : (
+            <>
+              已收 <b style={{ color: C.dark }}>{stats.count}</b> 份，涉及 <b style={{ color: C.dark }}>{stats.students}</b> 名学生。
+            </>
+          )}
+          {missing.length > 0 && (
+            <>
+              {" "}
+              这个班还有 <b style={{ color: C.danger }}>{missing.length}</b> 人上次交了、这次没交。
+            </>
+          )}
         </div>
       </div>
 
@@ -229,14 +386,88 @@ export default function SheetInbox({ password }) {
 
       {loading ? (
         <div style={{ textAlign: "center", padding: "36px 0", color: C.dim, fontSize: 13 }}>正在读取…</div>
+      ) : mode === "student" ? (
+        students.length === 0 ? (
+          emptyHint
+        ) : (
+          students.map((stu) => {
+            const open = openSid === stu.sid;
+            return (
+              <div key={stu.sid} style={{ background: open ? "#fff8ee" : C.card, border: "1px solid " + (open ? C.accent : C.line), borderRadius: 12, marginBottom: 8, overflow: "hidden" }}>
+                <div onClick={() => setOpenSid(open ? "" : stu.sid)} style={{ padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+                  <div
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 8,
+                      background: C.soft,
+                      border: "1px solid " + C.line,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: "#8a6a30",
+                      flexShrink: 0
+                    }}
+                  >
+                    {stu.count}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{stu.name || "未署名"}</span>
+                      <span style={{ fontSize: 11.5, color: C.dim }}>{classLabel(stu)}</span>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      交了 {stu.count} 次 · 最近 {dayOf(stu.lastAt)}
+                      {stu.lastExam ? " · " + stu.lastExam : " · 未指定考试"}
+                    </div>
+                  </div>
+                  <span style={{ color: "#b0a080", fontSize: 11, flexShrink: 0 }}>{open ? "收起" : "查历次"}</span>
+                </div>
+
+                {open && (
+                  <div style={{ padding: "0 14px 8px", borderTop: "1px solid " + C.line }}>
+                    {stu.sheets.map((sh, i) => {
+                      const expanded = openId === sh.id;
+                      const withName = { ...sh, studentName: stu.name };
+                      const mine = imgs[sh.id];
+                      return (
+                        <div key={sh.id} style={{ borderBottom: i === stu.sheets.length - 1 ? "none" : "1px dashed " + C.line, paddingTop: 10 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <div style={{ width: 44, fontSize: 11, color: C.dim, flexShrink: 0, textAlign: "right" }}>{dayOf(sh.createdAt)}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12.5, fontWeight: 600, color: C.dark, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {sh.examName || "未指定考试"}
+                              </div>
+                              <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                                {kindText(sh)} · {sh.source === "teacher" ? "你补传的" : "家长传的"} · {when(sh.createdAt)}
+                                {sh.note ? " · 留言：" + sh.note : ""}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => openSheet(withName)}
+                              style={{ background: expanded ? C.dark : C.soft, border: "1px solid " + (expanded ? C.dark : C.line), color: expanded ? C.cream : "#7a6a4a", borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}
+                            >
+                              {expanded ? "收起" : "看原件"}
+                            </button>
+                          </div>
+                          {expanded && (
+                            <div style={{ paddingBottom: 6 }}>
+                              <SheetImages sheet={withName} data={mine} busy={imgBusy === sh.id} onRemove={(e) => remove(withName, e)} />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )
       ) : sheets.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "40px 20px", color: C.muted, background: C.soft, borderRadius: 14, border: "1px dashed #c8b898" }}>
-          <div style={{ fontSize: 34, marginBottom: 10 }}>📭</div>
-          <div style={{ fontSize: 14 }}>还没有收到答题卡</div>
-          <div style={{ fontSize: 12, color: C.dim, marginTop: 8, lineHeight: 1.9 }}>
-            把 xinwang-math.com 的「考试答题卡上传」链接发群里，<br />家长填名字、拍照就传上来了。<br />家长直接发你微信的 PDF，点上面的「我自己补传」拖进来。
-          </div>
-        </div>
+        emptyHint
       ) : (
         sheets.map((s) => {
           const expanded = openId === s.id;
@@ -244,7 +475,22 @@ export default function SheetInbox({ password }) {
           return (
             <div key={s.id} style={{ background: expanded ? "#fff8ee" : C.card, border: "1px solid " + (expanded ? C.accent : C.line), borderRadius: 12, marginBottom: 8, overflow: "hidden" }}>
               <div onClick={() => openSheet(s)} style={{ padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 34, height: 34, borderRadius: 8, background: C.soft, border: "1px solid " + C.line, display: "flex", alignItems: "center", justifyContent: "center", fontSize: (s.kinds || []).includes("pdf") ? 10.5 : 13, fontWeight: 700, color: (s.kinds || []).includes("pdf") ? "#b04a30" : "#8a6a30", flexShrink: 0 }}>
+                <div
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 8,
+                    background: C.soft,
+                    border: "1px solid " + C.line,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: (s.kinds || []).includes("pdf") ? 10.5 : 13,
+                    fontWeight: 700,
+                    color: (s.kinds || []).includes("pdf") ? "#b04a30" : "#8a6a30",
+                    flexShrink: 0
+                  }}
+                >
                   {badgeOf(s)}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -263,51 +509,7 @@ export default function SheetInbox({ password }) {
 
               {expanded && (
                 <div style={{ padding: "0 14px 14px", borderTop: "1px solid " + C.line }}>
-                  {imgBusy === s.id && <div style={{ fontSize: 12.5, color: C.dim, padding: "12px 0" }}>正在取图…</div>}
-                  {mine?.error && <div style={{ fontSize: 12.5, color: C.danger, padding: "12px 0" }}>⚠ {mine.error}</div>}
-                  {Array.isArray(mine) &&
-                    mine.map((im, i) => {
-                      const isPdf = im.mediaType === "application/pdf";
-                      const href = isPdf ? im.blobUrl : im.dataUrl;
-                      const fileName = `${s.studentName}-${s.examName || "未指定考试"}-${i + 1}.${isPdf ? "pdf" : "jpg"}`;
-                      return (
-                        <div key={i} style={{ marginTop: 12 }}>
-                          {isPdf ? (
-                            <div style={{ border: "1px solid " + C.line, background: C.soft, borderRadius: 8, padding: "14px", textAlign: "center" }}>
-                              <div style={{ fontSize: 13, fontWeight: 700, color: "#b04a30", letterSpacing: 1 }}>PDF</div>
-                              <div style={{ fontSize: 11.5, color: C.dim, marginTop: 4, lineHeight: 1.8 }}>
-                                PDF 不能直接预览，点「打开」用浏览器看
-                              </div>
-                            </div>
-                          ) : (
-                            <img src={im.dataUrl} alt={"第" + (i + 1) + "页"} style={{ width: "100%", borderRadius: 8, border: "1px solid " + C.line, display: "block", background: "#fff" }} />
-                          )}
-                          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                            <a
-                              href={href}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{ flex: 1, textAlign: "center", background: C.dark, color: C.cream, borderRadius: 9, padding: "9px 0", fontSize: 12.5, textDecoration: "none" }}
-                            >
-                              {isPdf ? "打开" : "看原图"}
-                            </a>
-                            <a
-                              href={href}
-                              download={fileName}
-                              style={{ flex: 1, textAlign: "center", background: C.soft, border: "1px solid " + C.line, color: "#7a6a4a", borderRadius: 9, padding: "9px 0", fontSize: 12.5, textDecoration: "none" }}
-                            >
-                              下载
-                            </a>
-                            <button
-                              onClick={(e) => remove(s, e)}
-                              style={{ background: "transparent", border: "1px solid #e0a0a0", color: C.danger, borderRadius: 9, padding: "9px 14px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}
-                            >
-                              删除
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
+                  <SheetImages sheet={s} data={mine} busy={imgBusy === s.id} onRemove={(e) => remove(s, e)} />
                 </div>
               )}
             </div>

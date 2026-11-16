@@ -16,7 +16,8 @@
 //
 // 接口：
 //   POST                       家长上传 { gid, sid, examId?, note?, images:[{data,mediaType}] }
-//   GET  ?view=list&password=  老师端：收到的答题卡（可按 gid / examId 过滤）
+//   GET  ?view=list&password=  老师端：收到的答题卡，逐份（可按 gid / examId 过滤）
+//   GET  ?view=students&password=  老师端：按学生聚合，一人一行带历次（可按 gid 过滤）
 //   GET  ?view=img&id&n&password=  老师端：取第 n 张图片的 base64
 //   GET  ?view=mine&sid=       家长端：这个学生已经传了几份
 //   DELETE { id, password }    老师端：删除一份
@@ -168,6 +169,72 @@ export default async function handler(req, res) {
           ok: true,
           sheets: sheets.map(listView),
           stats: { count: sheets.length, students: sids.size },
+        });
+      }
+
+      // —— 老师端：按学生聚合 ——
+      //
+      // 家长是手填姓名的，同一个孩子一学期传三四份是常态（每考一次传一次）。
+      // 逐份清单看不出"这个孩子这几次都交了没"，所以单给一个按人聚合的视图。
+      //
+      // 为什么不在前端聚合：前端也能做，但老师切班级、刷新时都要把两百条重算一遍；
+      // 而且"谁交了几次"是第一眼要判断的东西，服务端一次算好直接给。
+      // 这里只多读一条 ZSET，不多花一次往返。
+      if (view === "students") {
+        if (!guardTeacher(req, res, q.password)) return;
+
+        const ids = q.gid
+          ? await redisCmd(["ZREVRANGE", K.groupSheets(String(q.gid)), "0", "499"])
+          : await redisCmd(["ZREVRANGE", K.sheetIdx(), "0", "499"]);
+        const sheets = await loadMany(ids || []);
+
+        const bySid = new Map();
+        for (const s of sheets) {
+          const sid = String(s.sid || "");
+          // 早期数据可能没有 sid（点选名单那一版之前的），归不进去就跳过，
+          // 逐份视图里还看得到，不至于丢。
+          if (!sid) continue;
+          let g = bySid.get(sid);
+          if (!g) {
+            g = {
+              sid,
+              name: s.studentName || "",
+              school: s.school || "",
+              groupName: s.groupName || "",
+              gid: s.gid || "",
+              count: 0,
+              lastAt: 0,
+              lastExam: "",
+              sheets: []
+            };
+            bySid.set(sid, g);
+          }
+          g.count += 1;
+          if ((s.createdAt || 0) >= g.lastAt) {
+            g.lastAt = s.createdAt || 0;
+            g.lastExam = s.examName || "";
+          }
+          const v = listView(s);
+          g.sheets.push({
+            id: v.id,
+            examId: v.examId,
+            examName: v.examName,
+            examDate: v.examDate,
+            imageCount: v.imageCount,
+            kinds: v.kinds,
+            source: v.source,
+            note: v.note,
+            createdAt: v.createdAt
+          });
+        }
+
+        const list = [...bySid.values()].sort((a, b) => b.lastAt - a.lastAt);
+        list.forEach((g) => g.sheets.sort((a, b) => b.createdAt - a.createdAt));
+
+        return res.status(200).json({
+          ok: true,
+          students: list,
+          stats: { students: list.length, count: sheets.length }
         });
       }
 
