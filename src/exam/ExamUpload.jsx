@@ -682,17 +682,17 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
 
           <button
             onClick={submit}
-            disabled={!!busy || shots.length === 0 || !sid}
+            disabled={!!busy || shots.length === 0 || !name.trim()}
             style={{
               width: "100%",
-              background: shots.length === 0 || !sid ? "#d8ccb4" : C.dark,
-              color: shots.length === 0 || !sid ? "#8a7a5a" : C.cream,
+              background: shots.length === 0 || !name.trim() ? "#d8ccb4" : C.dark,
+              color: shots.length === 0 || !name.trim() ? "#8a7a5a" : C.cream,
               border: "none",
               borderRadius: 12,
               padding: "15px 0",
               fontSize: 15,
               fontWeight: 700,
-              cursor: shots.length === 0 || !sid || busy ? "not-allowed" : "pointer",
+              cursor: shots.length === 0 || !name.trim() || busy ? "not-allowed" : "pointer",
               fontFamily: "inherit"
             }}
           >
