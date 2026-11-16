@@ -82,18 +82,23 @@ export default function ExamParent({ onBack }) {
           </div>
         </Card>
 
-        <Card title="怎么传，我才分析得了">
+        <Card title="先看你属于哪种，再决定怎么传">
+          <div style={{ background: C.soft, border: "1px solid " + C.border, borderRadius: 10, padding: "12px 14px", marginBottom: 12, lineHeight: 2 }}>
+            <div><strong>A. 智学网上能下载原卷或答题卡</strong>（有「下载原卷」按钮）→ 下载下来直接传，PDF 最好，最清楚。</div>
+            <div><strong>B. 能看，但下载不了</strong> → 放大后一页一张截图，别把整份缩在一张图里。</div>
+            <div><strong>C. 智学网上没有，只有纸质答题卡</strong> → 拍照，也是一张只拍一页。</div>
+          </div>
+
           <div style={{ marginBottom: 10 }}>
-            <strong>1. 一页一张，分开传。</strong>答题卡有几页就传几页，一般六到八页。分开传，每页的字才够大。
+            <strong>先找一找有没有「下载原卷」。</strong>有的话直接传文件，比拍照、截图都清楚，孩子每一步写了什么都能看见。
           </div>
-          <div style={{ marginBottom: 10, background: "#fdf3dc", border: "1px solid #e8c870", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#7a5a20" }}>
-            <strong>2. 别整份拼成一张。</strong>在手机上把页面缩到最小、一屏截下全部——这种长图每页只剩两三百像素，字糊成一团，我拿到也看不出他错在哪一步。
+
+          <div style={{ background: "#fdf3dc", border: "1px solid #e8c870", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#7a5a20", marginBottom: 10 }}>
+            <strong>最怕整份拼成一张长图。</strong>把六到八页缩到一屏里，每页只剩两三百像素，字糊成一团，我看不出他错在哪一步。有几页就分几次传，一页一张。
           </div>
-          <div style={{ marginBottom: 10 }}>
-            <strong>3. 字要清楚。</strong>你眯着眼看不清的，我也看不清。光线足、拍正、四个角都进画面，老师打的叉别挡住。
-          </div>
+
           <div>
-            <strong>4. 能下载原卷就传 PDF。</strong>智学网里如果能看到「下载原卷」这个按钮，存下来直接传，比截图清楚得多。
+            <strong>不管哪种，字要清楚。</strong>你眯着眼看不清的，我也看不清。光线足、拍正、四个角都进画面，老师打的叉别挡住。
           </div>
         </Card>
 

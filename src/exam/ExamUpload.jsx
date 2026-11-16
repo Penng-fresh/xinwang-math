@@ -225,8 +225,14 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
   const [exams, setExams] = useState([]);
   const [examId, setExamId] = useState("");
   const [shots, setShots] = useState([]);
+  // 只影响提示文案，不进数据：家长先说清手上是什么，提示才对得上，
+  // 比把三条注意事项一起堆在下面有效。
+  const [sourceKind, setSourceKind] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [note, setNote] = useState("");
+  // 家长看纸质答题卡报的总分。空着也能传 —— 有的学校不让拍照带走，
+  // 或者分数还没出来，不能因为填不了分就卡住原件收集。
+  const [score, setScore] = useState("");
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [done, setDone] = useState(null);
@@ -377,6 +383,9 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
     if (!name.trim()) return setErr("先填孩子的姓名");
     if (!examId) return setErr("先选这次是哪场考试");
     if (shots.length === 0) return setErr("还没选答题卡");
+    if (String(score).trim() && !/^\d{1,3}(\.\d)?$/.test(String(score).trim())) {
+      return setErr("分数填成数字就行，比如 108 或 108.5");
+    }
     setBusy("正在上传…");
     try {
       const r = await fetch("/api/answer-sheets", {
@@ -404,8 +413,26 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
         setPeople(loadPeople());
       }
       setDone(d);
+
+      // 分数单独存。答题卡已经传上去了，就算这一步失败也不能让用户以为没传成 ——
+      // 分数随时能补，原件补不回来。所以这里的错误只记下来，不抛给上传流程。
+      let scoreSaved = false;
+      if (String(score).trim()) {
+        try {
+          const sr = await fetch("/api/scores", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ gid, sid: d.sid, examId, score: Number(score), source: mode })
+          });
+          const sd = await sr.json().catch(() => ({}));
+          scoreSaved = sr.ok && !!sd.ok;
+        } catch (_) {}
+      }
+
+      setDone({ ...d, scoreSaved, scoreWanted: !!String(score).trim() });
       setShots([]);
       setNote("");
+      setScore("");
       if (onUploaded) onUploaded();
     } catch (e) {
       const isNet = /Load failed|Failed to fetch|NetworkError|network error/i.test(e.message || "");
@@ -434,6 +461,11 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
             ? "已经挂到这个学生名下了，在下面的列表里能看到。"
             : "这次先收着。逐题分析要等卷子的难度分好类之后才能出，能出了我在群里说。"}
         </div>
+        {done.scoreWanted && !done.scoreSaved && (
+          <div style={{ background: "#fdf3dc", border: "1px solid #e8c870", borderRadius: 8, padding: "9px 12px", marginTop: 12, fontSize: 12, color: "#7a5a20", lineHeight: 1.8 }}>
+            答题卡收到了，但分数没记上。等下在群里告诉我一声，我补进去。
+          </div>
+        )}
         <button
           onClick={() => setDone(null)}
           style={{ marginTop: 18, background: "transparent", border: "1px solid " + C.line, color: "#7a6a4a", borderRadius: 20, padding: "9px 22px", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}
@@ -580,6 +612,41 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
 
           <div style={{ marginBottom: 14 }}>
             <div style={labelStyle}>答题卡（照片或 PDF）</div>
+            <div style={{ fontSize: 11.5, color: C.dim, marginBottom: 8, lineHeight: 1.8 }}>
+              先选你手上是哪一种，我告诉你怎么传最清楚：
+            </div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+              {[
+                ["download", "智学网能下载"],
+                ["shot", "只能截图"],
+                ["photo", "只有纸质卷"]
+              ].map(([k, label]) => (
+                <button
+                  key={k}
+                  onClick={() => setSourceKind(k)}
+                  style={{
+                    flex: 1,
+                    padding: "9px 2px",
+                    fontSize: 11.5,
+                    fontFamily: "inherit",
+                    cursor: "pointer",
+                    borderRadius: 8,
+                    border: "1px solid " + (sourceKind === k ? C.dark : C.line),
+                    background: sourceKind === k ? C.dark : C.soft,
+                    color: sourceKind === k ? C.cream : "#7a6a4a"
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {sourceKind && (
+              <div style={{ background: sourceKind === "download" ? "#eaf5e8" : "#fdf3dc", border: "1px solid " + (sourceKind === "download" ? "#b8d8a8" : "#e8c870"), borderRadius: 8, padding: "9px 12px", marginBottom: 10, fontSize: 11.5, color: sourceKind === "download" ? "#3a6a3a" : "#7a5a20", lineHeight: 1.9 }}>
+                {sourceKind === "download" && <>在智学网点「下载原卷」，把文件传上来。有 PDF 就传 PDF，一页一份最好。</>}
+                {sourceKind === "shot" && <>把原卷放大后<strong>一页一张截图</strong>，千万别整份缩到一屏——那样每页只剩两三百像素，看不出孩子错在哪一步。</>}
+                {sourceKind === "photo" && <><strong>一张只拍一页。</strong>光线足、拍正、四个角都进画面，老师打的叉别挡住。六到八页就分六到八次传。</>}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 onClick={() => camRef.current?.click()}
@@ -597,7 +664,7 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
               </button>
             </div>
             <div style={{ fontSize: 11.5, color: "#b0a080", marginTop: 7, lineHeight: 1.8 }}>
-              智学网里能点「下载原卷」的，传那份 PDF 比截图清楚；不能下载的就一页一页截图。
+              能下载原卷就传文件；只能看就一页一张截图；只有纸质卷就一张拍一页。按上面选的类型来，最省事也最清楚。
             </div>
             <input
               ref={camRef}
@@ -673,6 +740,24 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
                 <b>建议在智学网上点开原卷，双指放大，一页一页截图。</b>
               </div>
             )}
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <div style={labelStyle}>这次考了多少分（可不填）</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                value={score}
+                onChange={(e) => setScore(e.target.value.replace(/[^\d.]/g, ""))}
+                inputMode="decimal"
+                maxLength={6}
+                placeholder="比如 108"
+                style={{ ...controlStyle, flex: 1, marginBottom: 0 }}
+              />
+              <span style={{ fontSize: 12, color: C.dim, flexShrink: 0 }}>分</span>
+            </div>
+            <div style={{ fontSize: 11.5, color: C.dim, marginTop: 7, lineHeight: 1.8 }}>
+              卷子上写的总分。不知道就先空着，以后告诉我也能补。
+            </div>
           </div>
 
           <div style={{ marginBottom: 14 }}>

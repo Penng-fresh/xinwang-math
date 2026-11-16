@@ -127,6 +127,7 @@ export default function SheetInbox({ password }) {
   const [openSid, setOpenSid] = useState(""); // 按学生视角里展开的那个学生
   const [showUpload, setShowUpload] = useState(false);
   const [imgs, setImgs] = useState({}); // id -> [{dataUrl}] 或 {error}
+  const [scores, setScores] = useState({}); // sid|examId -> 分数
   const [imgBusy, setImgBusy] = useState("");
 
   const load = async (filterGid, wantMode, filterExam) => {
@@ -147,6 +148,21 @@ export default function SheetInbox({ password }) {
         setSheets(Array.isArray(d.sheets) ? d.sheets : []);
       }
       setStats(d.stats || { count: 0, students: 0 });
+
+      // 分数不混在答题卡列表里：一场可能传三页，分只有一条。
+      // 这里把当前筛选下能用到的分一次取回来，展开学生时直接用。
+      try {
+        const sq = fe ? "&examId=" + encodeURIComponent(fe) : "";
+        const sr = await fetch(`/api/scores?view=exam${sq}&password=` + encodeURIComponent(password));
+        const sd = await sr.json().catch(() => ({}));
+        if (sr.ok && Array.isArray(sd.scores)) {
+          const map = {};
+          sd.scores.forEach((x) => {
+            map[x.sid + "|" + x.examId] = x.score;
+          });
+          setScores(map);
+        }
+      } catch (_) {}
     } catch (e) {
       setErr(e.message || "读取失败");
       setStudents([]);
@@ -276,6 +292,22 @@ export default function SheetInbox({ password }) {
       });
     } catch (err2) {
       alert("删除失败：" + (err2.message || "网络问题"));
+    }
+  };
+
+  // 老师改分：点分数条直接改，改完不用整页刷新
+  const saveScore = async (sid, examId, value) => {
+    try {
+      const r = await fetch("/api/scores", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sid, examId, score: value, password })
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d?.error || "改分失败");
+      setScores((cur) => ({ ...cur, [sid + "|" + examId]: value }));
+    } catch (e) {
+      alert("改分失败：" + (e.message || "网络问题"));
     }
   };
 
@@ -497,8 +529,25 @@ export default function SheetInbox({ password }) {
                           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                             <div style={{ width: 44, fontSize: 11, color: C.dim, flexShrink: 0, textAlign: "right" }}>{dayOf(sh.createdAt)}</div>
                             <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 12.5, fontWeight: 600, color: C.dark, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {sh.examName || "未指定考试"}
+                              <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
+                                <span style={{ fontSize: 12.5, fontWeight: 600, color: C.dark, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {sh.examName || "未指定考试"}
+                                </span>
+                                {sh.examId && scores[stu.sid + "|" + sh.examId] !== undefined && (
+                                  <span
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const next = window.prompt(`${stu.name} · ${sh.examName} 的分数`, String(scores[stu.sid + "|" + sh.examId]));
+                                      if (next === null) return;
+                                      if (!/^\d{1,3}(\.\d)?$/.test(next.trim())) return alert("填数字，比如 108 或 108.5");
+                                      saveScore(stu.sid, sh.examId, Number(next));
+                                    }}
+                                    style={{ background: "#e8f5e8", border: "1px solid #a8d0a8", borderRadius: 6, padding: "0 6px", fontSize: 11, color: C.good, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}
+                                    title="点一下改分"
+                                  >
+                                    {scores[stu.sid + "|" + sh.examId]} 分 ✎
+                                  </span>
+                                )}
                               </div>
                               <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
                                 {kindText(sh)} · {sh.source === "teacher" ? "你补传的" : "家长传的"} · {when(sh.createdAt)}
