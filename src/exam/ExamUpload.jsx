@@ -523,9 +523,9 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
               maxLength={20}
               style={{ ...controlStyle, background: gid ? "#fff" : C.soft }}
             />
-            {sameGid.length > 0 && (
+            {sameGid.filter((p) => p.name !== name).length > 0 && (
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-                {sameGid.map((p) => (
+                {sameGid.filter((p) => p.name !== name).map((p) => (
                   <button
                     key={p.name}
                     onClick={() => setName(p.name)}
