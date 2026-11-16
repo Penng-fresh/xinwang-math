@@ -183,9 +183,16 @@ export default async function handler(req, res) {
       if (view === "students") {
         if (!guardTeacher(req, res, q.password)) return;
 
-        const ids = q.gid
-          ? await redisCmd(["ZREVRANGE", K.groupSheets(String(q.gid)), "0", "499"])
-          : await redisCmd(["ZREVRANGE", K.sheetIdx(), "0", "499"]);
+        // 考试优先于班级：选了考试就是"这一场谁交了"，
+        // 这是唯一能让"谁还没交"这句话站得住的口径。
+        let ids;
+        if (q.examId) {
+          ids = await redisCmd(["ZREVRANGE", K.examSheets(String(q.examId)), "0", "499"]);
+        } else if (q.gid) {
+          ids = await redisCmd(["ZREVRANGE", K.groupSheets(String(q.gid)), "0", "499"]);
+        } else {
+          ids = await redisCmd(["ZREVRANGE", K.sheetIdx(), "0", "499"]);
+        }
         const sheets = await loadMany(ids || []);
 
         const bySid = new Map();

@@ -113,6 +113,8 @@ function SheetImages({ sheet, data, busy, onRemove }) {
 export default function SheetInbox({ password }) {
   const [catalog, setCatalog] = useState([]);
   const [gid, setGid] = useState("");
+  const [exams, setExams] = useState([]);
+  const [examId, setExamId] = useState("");
   const [mode, setMode] = useState("student"); // student | sheet
   const [students, setStudents] = useState([]); // 按人的聚合
   const [sheets, setSheets] = useState([]); // 逐份
@@ -127,12 +129,14 @@ export default function SheetInbox({ password }) {
   const [imgs, setImgs] = useState({}); // id -> [{dataUrl}] 或 {error}
   const [imgBusy, setImgBusy] = useState("");
 
-  const load = async (filterGid, wantMode) => {
+  const load = async (filterGid, wantMode, filterExam) => {
     const m = wantMode || mode;
+    const fg = filterGid === undefined ? gid : filterGid;
+    const fe = filterExam === undefined ? examId : filterExam;
     setLoading(true);
     setErr("");
     try {
-      const q = filterGid ? "&gid=" + encodeURIComponent(filterGid) : "";
+      const q = (fg ? "&gid=" + encodeURIComponent(fg) : "") + (fe ? "&examId=" + encodeURIComponent(fe) : "");
       const view = m === "student" ? "students" : "list";
       const r = await fetch(`/api/answer-sheets?view=${view}` + q + "&password=" + encodeURIComponent(password));
       const d = await r.json().catch(() => ({}));
@@ -164,9 +168,12 @@ export default function SheetInbox({ password }) {
     load("", "student");
   }, []);
 
-  // 选了班级就顺带读这个班的名单，用来算「上次交了这次没交」
+  // 选了班级就顺带读这个班的名单和考试列表：
+  //   名单 → 算「这场谁没交」
+  //   考试 → 下拉里能选到"哪一场"，不选就是整班混在一起看
   useEffect(() => {
     setMembers([]);
+    setExams([]);
     if (!gid) return;
     let alive = true;
     (async () => {
@@ -174,6 +181,11 @@ export default function SheetInbox({ password }) {
         const r = await fetch("/api/roster?view=pick&gid=" + encodeURIComponent(gid));
         const d = await r.json().catch(() => ({}));
         if (alive && r.ok && Array.isArray(d.students)) setMembers(d.students);
+      } catch (_) {}
+      try {
+        const r = await fetch("/api/exams?view=list&gid=" + encodeURIComponent(gid) + "&password=" + encodeURIComponent(password));
+        const d = await r.json().catch(() => ({}));
+        if (alive && r.ok && Array.isArray(d.exams)) setExams(d.exams);
       } catch (_) {}
     })();
     return () => {
@@ -189,9 +201,11 @@ export default function SheetInbox({ password }) {
   }, [mode, students, sheets]);
 
   const missing = useMemo(() => {
-    if (!gid || members.length === 0) return [];
+    // 只有选中了具体某一场，才谈得上"这场没交"。
+    // 只看整班时没有"这次"这个概念，硬算出来的名单是错的。
+    if (!examId || members.length === 0) return [];
     return members.filter((m) => !gotSids.has(m.sid));
-  }, [gid, members, gotSids]);
+  }, [examId, members, gotSids]);
 
   const openSheet = async (s) => {
     if (openId === s.id) {
@@ -298,9 +312,10 @@ export default function SheetInbox({ password }) {
             value={gid}
             onChange={(e) => {
               setGid(e.target.value);
+              setExamId("");
               setOpenId("");
               setOpenSid("");
-              load(e.target.value);
+              load(e.target.value, mode, "");
             }}
             style={{ flex: 1, minWidth: 160, padding: "9px 10px", fontSize: 13, fontFamily: "inherit", color: C.dark, background: C.soft, border: "1px solid " + C.line, borderRadius: 9, outline: "none" }}
           >
@@ -313,6 +328,27 @@ export default function SheetInbox({ password }) {
               ))
             )}
           </select>
+          {gid && (
+            <select
+              value={examId}
+              onChange={(e) => {
+                setExamId(e.target.value);
+                setOpenId("");
+                setOpenSid("");
+                load(gid, mode, e.target.value);
+              }}
+              style={{ flex: 1, minWidth: 150, padding: "9px 10px", fontSize: 13, fontFamily: "inherit", color: C.dark, background: C.soft, border: "1px solid " + C.line, borderRadius: 9, outline: "none" }}
+            >
+              <option value="">全部考试</option>
+              {exams.map((ex) => (
+                <option key={ex.id} value={ex.id}>
+                  {ex.name}
+                  {ex.date ? " · " + ex.date : ""}
+                  {ex.status !== "open" ? "（已停）" : ""}
+                </option>
+              ))}
+            </select>
+          )}
           <button
             onClick={() => {
               setShowUpload((v) => !v);
@@ -355,6 +391,7 @@ export default function SheetInbox({ password }) {
         </div>
 
         <div style={{ fontSize: 12, color: C.dim, marginTop: 10, lineHeight: 1.9 }}>
+          {examId ? "这场考试：" : ""}
           {mode === "student" ? (
             <>
               共 <b style={{ color: C.dark }}>{stats.students}</b> 名学生交过，累计 <b style={{ color: C.dark }}>{stats.count}</b> 份。
@@ -367,7 +404,7 @@ export default function SheetInbox({ password }) {
           {missing.length > 0 && (
             <>
               {" "}
-              这个班还有 <b style={{ color: C.danger }}>{missing.length}</b> 人上次交了、这次没交。
+              还有 <b style={{ color: C.danger }}>{missing.length}</b> 人没交。
             </>
           )}
         </div>
@@ -385,7 +422,7 @@ export default function SheetInbox({ password }) {
 
       {missing.length > 0 && (
         <div style={{ background: "#fdf3dc", border: "1px solid #e8c870", borderRadius: 10, padding: "12px 14px", marginBottom: 12, fontSize: 12.5, color: "#7a5a20", lineHeight: 1.9 }}>
-          <b>还没传：</b>
+          <b>这场还没交：</b>
           {missing.map((m) => m.name).join("、")}
         </div>
       )}
