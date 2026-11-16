@@ -18,6 +18,14 @@
 
 import { useEffect, useRef, useState } from "react";
 
+// 年级顺序固定，不按字典序（否则"初三"会排到"初一"前面）
+const GRADES = ["初一", "初二", "初三"];
+
+function gradesOf(groups) {
+  const has = new Set((groups || []).map((g) => g.grade).filter(Boolean));
+  return GRADES.filter((g) => has.has(g)).concat([...has].filter((g) => !GRADES.includes(g)));
+}
+
 const C = {
   dark: "#2a2218",
   card: "#fff",
@@ -218,6 +226,7 @@ function Sel({ label, value, onChange, disabled, children }) {
 
 export default function ExamUpload({ mode = "parent", onUploaded }) {
   const [catalog, setCatalog] = useState(null); // null = 读取中
+  const [grade, setGrade] = useState(""); // 家长端年级筛选（学校下有多个年级时才出现）
   const [gid, setGid] = useState("");
   const [sid, setSid] = useState("");
   const [name, setName] = useState("");
@@ -258,10 +267,12 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
         setPeople(list);
         if (list.length === 0) return;
         // 恢复最近一次用的班级和名字。班级可能已经被删了，先确认还在目录里。
-        const gids = [];
-        schools.forEach((s) => (s.groups || []).forEach((g) => gids.push(g.gid)));
-        const last = list.find((p) => gids.includes(p.gid));
+        const allGroups = [];
+        schools.forEach((s) => (s.groups || []).forEach((g) => allGroups.push(g)));
+        const last = list.find((p) => allGroups.some((g) => g.gid === p.gid));
         if (!last) return;
+        const lastGroup = allGroups.find((g) => g.gid === last.gid);
+        setGrade(lastGroup?.grade || "");
         setGid(last.gid);
         setName(last.name);
         if (last.sid) setSid(last.sid);
@@ -331,7 +342,10 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
   }, [sid, done]);
 
   const school = catalog?.find((s) => (s.groups || []).some((g) => g.gid === gid));
-  const classList = school?.groups || [];
+
+  // 当前学校的班级按年级筛。一个年级一个班时年级下拉不出现，不多一步操作。
+  const gradeOptions = gradesOf(school?.groups);
+  const classList = (school?.groups || []).filter((g) => !grade || g.grade === grade);
   // 这台设备在这个班输过的名字。别的家长的名字永远不会出现在这里 ——
   // 数据只在本地，服务端根本不返回名单。
   const sameGid = gid ? people.filter((p) => p.gid === gid) : [];
@@ -518,7 +532,11 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
             value={school ? school.school : ""}
             onChange={(e) => {
               const s = catalog.find((x) => x.school === e.target.value);
-              setGid(s?.groups?.[0]?.gid || "");
+              const gs = gradesOf(s?.groups);
+              const first = gs[0] || "";
+              setGrade(first);
+              const firstGroup = (s?.groups || []).find((g) => !first || g.grade === first) || s?.groups?.[0];
+              setGid(firstGroup?.gid || "");
               setSid("");
               setName("");
             }}
@@ -530,6 +548,25 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
               </option>
             ))}
           </Sel>
+
+          {school && gradeOptions.length > 1 && (
+            <Sel
+              label="年级"
+              value={grade}
+              onChange={(e) => {
+                const g = e.target.value;
+                setGrade(g);
+                const firstGroup = (school.groups || []).find((x) => x.grade === g);
+                setGid(firstGroup?.gid || "");
+                setSid("");
+                setName("");
+              }}
+            >
+              {gradeOptions.map((g) => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </Sel>
+          )}
 
           {school && classList.length > 1 && (
             <Sel

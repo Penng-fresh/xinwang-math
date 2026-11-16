@@ -270,7 +270,11 @@ export default function ExamRoster({ password }) {
           </div>
           <div>
             <div style={S.label}>年级</div>
-            <input style={S.input} value={form.grade} onChange={(e) => setForm({ ...form, grade: e.target.value })} />
+            <select style={S.input} value={form.grade} onChange={(e) => setForm({ ...form, grade: e.target.value })}>
+              <option value="初一">初一</option>
+              <option value="初二">初二</option>
+              <option value="初三">初三</option>
+            </select>
           </div>
           <div>
             <div style={S.label}>学期</div>
