@@ -481,6 +481,17 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
       setParentAnalysis(null);
       setDone(d);
 
+      // 自动分析必须在这里触发。服务端上传函数里 fire-and-forget 会被 Vercel 冻结，
+      // 实测 90 秒都没生成分析记录；这里另开一个请求，让分析函数自己同步跑完。
+      // 不 await：家长先看到"收到了"，分析在后台这个独立请求里继续。
+      if (d.analyzing && d.id && d.sid) {
+        fetch("/api/analysis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: d.id, sid: d.sid })
+        }).catch(() => {});
+      }
+
       // 分数单独存。答题卡已经传上去了，就算这一步失败也不能让用户以为没传成 ——
       // 分数随时能补，原件补不回来。所以这里的错误只记下来，不抛给上传流程。
       let scoreSaved = false;

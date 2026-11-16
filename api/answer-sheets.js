@@ -25,7 +25,6 @@
 
 import { guardTeacher } from "../lib/auth.js";
 import { K, redisCmd, redisPipe, getJSON, getHash, newId } from "../lib/store.js";
-import { triggerAnalysis } from "../lib/analyze.js";
 
 // 一次最多三张：期中数学答题卡通常 A4 双面或 A3 单面，三张足够。
 // 不放大是因为 Vercel 函数请求体上限 4.5MB，前端压到 ~70 万字符一张，
@@ -448,11 +447,9 @@ export default async function handler(req, res) {
 
       await redisPipe(pipe);
 
-      // 传完就自动分析，不等它跑完 —— AI 读一张图要 20~30 秒，
-      // 让家长对着转圈等太久会以为传失败了。分析状态落在 analysis:<id>，
-      // 后台列表能看到 pending/running/done/error，失败随时手动重跑。
-      // 注意：分析失败绝不能影响这次上传已经成功的事实。
-      if (exam) triggerAnalysis(id);
+      // 自动分析由上传页拿到 id/sid 后另发一个 POST /api/analysis 触发。
+      // 不能在这里 fire-and-forget：Vercel 会在响应后冻结函数，后台任务实测没跑。
+      // 这里只告诉前端"这场可以分析"，失败也不会影响这次上传成功。
 
       // 把 sid 回给前端，这台设备下次直接用 sid 认人，不必再按名字匹配
       return res.status(200).json({ ok: true, id, sid, imageCount: images.length, examName: meta.examName, studentName: meta.studentName, analyzing: !!exam });
@@ -501,9 +498,7 @@ export default async function handler(req, res) {
       if (exam) pipe.push(["ZADD", K.examSheets(exam.id), String(meta.createdAt || Date.now()), id]);
       await redisPipe(pipe);
 
-      // 补挂到某场考试，就等于这份答题卡第一次有了卷子结构。
-      // 跟上传走同一套分析，老师不用再到别处点一次。
-      if (exam) triggerAnalysis(id);
+      // 补挂到考试后前端可以点「重新分析」；不在服务端后台触发，原因同上。
 
       return res.status(200).json({ ok: true, examId: next.examId, examName: next.examName, analyzing: !!exam });
     }

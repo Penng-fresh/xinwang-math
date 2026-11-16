@@ -9,6 +9,7 @@
 //   GET  ?id=xxx&password=xxx            老师端：查一份的分析结果
 //   GET  ?view=many&ids=a,b,c&password=  老师端：一次查多份（列表页用）
 //   GET  ?view=mine&id=xxx&sid=xxx       家长端：只看自己那一份的结论
+//   POST { id, sid }                     上传页：自动触发（只回家长可见字段）
 //   POST { id, password }                老师端：手动重跑（同步等结果）
 
 import { guardTeacher } from "../lib/auth.js";
@@ -107,7 +108,6 @@ export default async function handler(req, res) {
       try { body = JSON.parse(body); } catch (_) { return res.status(400).json({ error: "请求格式不对" }); }
     }
     body = body || {};
-    if (!guardTeacher(req, res, body.password)) return;
 
     const id = String(body.id || "");
     if (!id) return res.status(400).json({ error: "缺少答题卡 id" });
@@ -115,14 +115,38 @@ export default async function handler(req, res) {
     const meta = await getJSON(K.sheet(id));
     if (!meta) return res.status(404).json({ error: "找不到这份答题卡" });
 
-    // 同步等结果：老师点了按钮，就让他当场看到成功还是失败。
-    // 一次分析 20~30 秒，Vercel 免费版函数上限 10s 的话会超时 ——
-    // 真超时就把状态留在 running，前端提示"后台继续跑，稍后刷新"。
+    // 两条路：
+    //   1) 老师带密码手动重跑，返回完整报告字段；
+    //   2) 上传页面刚拿到 id/sid 后立刻触发，sid 必须和档案一致，只回家长可见字段。
+    // 第二条是自动分析真正可靠的触发点：上传函数里 fire-and-forget 会被 Vercel 冻结，
+    // 而这个 POST 是独立的函数请求，前台不 await 它也能跑完。
+    const password = String(body.password || "");
+    const sid = String(body.sid || "");
+    let familyOnly = false;
+
+    if (password) {
+      if (!guardTeacher(req, res, password)) return;
+    } else if (sid) {
+      if (String(meta.sid || "") !== sid) return res.status(403).json({ error: "不能分析这份答题卡" });
+      familyOnly = true;
+      const old = await getJSON(K.analysis(id));
+      if (old && (old.status === "running" || old.status === "done")) {
+        return res.status(200).json({ ok: !!old.ok, analysis: publicFamilyView(old) });
+      }
+    } else {
+      return res.status(401).json({ error: "缺少触发凭证" });
+    }
+
+    // 同步等结果：老师点了按钮，就让他当场看到成功还是失败；
+    // 上传页那边不 await，家长看到的是上传成功 + 稍后的结论。
     try {
       const result = await runAnalysis(id);
-      return res.status(200).json({ ok: !!result.ok, analysis: publicView(result) });
+      return res.status(200).json({
+        ok: !!result.ok,
+        analysis: familyOnly ? publicFamilyView(result) : publicView(result),
+      });
     } catch (e) {
-      return res.status(502).json({ error: e?.message || "重跑失败" });
+      return res.status(502).json({ error: e?.message || "分析失败" });
     }
   }
 
