@@ -11,6 +11,8 @@
 //   2) 考试必选，而且只有建班时预置的四场：第一次月考、期中、第二次月考、期末。
 //      不设「未指定」—— 那种答卷按考试筛永远出不来，"这场谁没交"会冤枉人。
 //      也不替家长默认勾第一场：默默算成月考比不填更难发现。
+//   2b) 学校必填。将来 AI 分析卷面要先有这一份卷子的评分标准；同一所学校的
+//      统一考试用同一份卷子，标准就能复用。少一个学校字段，每份卷子都得单独建标准。
 //   3) 照片压到 ~50 万字符一张（2000px 长边、约 170dpi）。答题卡上的字
 //      和红笔批改都要看得清，不能像作业检查那样压到 900px。
 //   4) 记一台设备上次选的学生。一个家长通常只管一个孩子，
@@ -232,7 +234,7 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
   const [sid, setSid] = useState("");
   const [name, setName] = useState("");
   // 孩子读哪所学校：学生属性，不是分组。家长手填，本机记过就带出来。
-  // 选填 —— 纸质卷阶段学校用不上；等 AI 按学校归卷子时，这个字段才有用。
+  // 必填 —— 将来 AI 按学校复用同一份卷子的评分标准，没有学校字段就得每份卷子重来一遍。
   const [studentSchool, setStudentSchool] = useState("");
   const [people, setPeople] = useState([]);
   const [exams, setExams] = useState([]);
@@ -408,6 +410,7 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
     setErr("");
     if (!gid) return setErr("先选班级");
     if (!name.trim()) return setErr("先填孩子的姓名");
+    if (!studentSchool.trim()) return setErr("先填孩子读哪所学校（同一所学校的卷子能共用一份评分标准）");
     if (!examId) return setErr("先选这次是哪场考试");
     if (shots.length === 0) return setErr("还没选答题卡");
     if (String(score).trim() && !/^\d{1,3}(\.\d)?$/.test(String(score).trim())) {
@@ -623,9 +626,10 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
           </div>
 
           {/* 学校是学生属性，不是班级：一个班里有宝一中、新建路中学好几个学校。
-              先选填，等上线 AI 卷面分析时，靠它把同一所学校的卷子归到一起。 */}
+              必填 —— 同一所学校的统一考试用同一份卷子，将来 AI 分析时能共用一套评分标准；
+              少了这个字段，每份卷子都得从头建标准。 */}
           <div style={{ marginBottom: 12 }}>
-            <div style={labelStyle}>孩子学校（可不填）</div>
+            <div style={labelStyle}>孩子学校（必填）</div>
             <input
               list="xw-student-schools"
               value={studentSchool}
@@ -640,7 +644,7 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
               ))}
             </datalist>
             <div style={{ fontSize: 11.5, color: C.dim, marginTop: 7, lineHeight: 1.8 }}>
-              这台手机填过的学校会自动提示。现在只是记下来，以后按同一所学校的卷子分析时用得上。
+              同一所学校用同一份卷子，填了学校以后分析卷面时能共用一套评分标准，不用每份卷子重新来。这台手机填过的学校会自动提示。
             </div>
           </div>
 
@@ -833,17 +837,17 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
 
           <button
             onClick={submit}
-            disabled={!!busy || shots.length === 0 || !name.trim() || !examId}
+            disabled={!!busy || shots.length === 0 || !name.trim() || !studentSchool.trim() || !examId}
             style={{
               width: "100%",
-              background: shots.length === 0 || !name.trim() || !examId ? "#d8ccb4" : C.dark,
-              color: shots.length === 0 || !name.trim() || !examId ? "#8a7a5a" : C.cream,
+              background: shots.length === 0 || !name.trim() || !studentSchool.trim() || !examId ? "#d8ccb4" : C.dark,
+              color: shots.length === 0 || !name.trim() || !studentSchool.trim() || !examId ? "#8a7a5a" : C.cream,
               border: "none",
               borderRadius: 12,
               padding: "15px 0",
               fontSize: 15,
               fontWeight: 700,
-              cursor: shots.length === 0 || !name.trim() || !examId || busy ? "not-allowed" : "pointer",
+              cursor: shots.length === 0 || !name.trim() || !studentSchool.trim() || !examId || busy ? "not-allowed" : "pointer",
               fontFamily: "inherit"
             }}
           >
