@@ -245,7 +245,10 @@ export default async function handler(req, res) {
         ];
         EXAM_SLOTS.forEach((name, i) => {
           const examId = newId();
-          const at = now + i; // 排序稳定：第一次月考在前，期末在后
+          const at = now + i;
+          // 列表用 ZREVRANGE（分数大的在前），所以第一场要给最高分，
+          // 家长看到的顺序才是「一月 → 期中 → 二月 → 期末」
+          const rank = now + (EXAM_SLOTS.length - 1 - i);
           cmds.push(
             ["SET", K.exam(examId), JSON.stringify({
               id: examId,
@@ -260,8 +263,8 @@ export default async function handler(req, res) {
               createdAt: at,
               updatedAt: at
             })],
-            ["ZADD", K.examIdx(), String(at), examId],
-            ["ZADD", K.groupExams(gid), String(at), examId]
+            ["ZADD", K.examIdx(), String(rank), examId],
+            ["ZADD", K.groupExams(gid), String(rank), examId]
           );
         });
         await redisPipe(cmds);
