@@ -28,8 +28,12 @@ import { K, redisCmd, redisPipe, getJSON, newId } from "../lib/store.js";
 // 不放大是因为 Vercel 函数请求体上限 4.5MB，前端压到 ~70 万字符一张，
 // 三张约 2.1MB，留出了余量。
 const MAX_IMAGES = 3;
+// 图片走前端压缩，正常落在 70 万字符以内；PDF 不能重编码，只能整份塞，
+// 前端已把上限卡在 2MB 文件（base64 约 280 万字符）。两个上限分开写，
+// 免得一张异常大的图也能顶到 PDF 的额度。
 const MAX_CHARS_PER_IMAGE = 1_200_000;
-const MAX_CHARS_TOTAL = 3_000_000;
+const MAX_CHARS_PER_PDF = 2_800_000;
+const MAX_CHARS_TOTAL = 3_600_000;
 
 // 单条 Redis 命令的 value 不宜过大，切成一节节存进 list。
 // 前端基本都能压到一节以内，这里只是防止个别原图直接打进来。
@@ -68,6 +72,9 @@ function listView(s) {
     examName: s.examName || "",
     examDate: s.examDate || "",
     imageCount: s.imageCount || 0,
+    // 前端要按类型分别渲染：图片能直接给 <img>，PDF 只能给下载/新窗口打开
+    kinds: (s.images || []).map((im) => (im.mediaType === "application/pdf" ? "pdf" : "image")),
+    source: s.source || "parent",
     note: s.note || "",
     createdAt: s.createdAt,
   };
@@ -193,12 +200,22 @@ export default async function handler(req, res) {
         // Vercel 会把超长 body 直接掐掉，到这里应已是完整 base64。
         // 只做长度和字符集检查：内容是否真的是图片，等以后渲染时自然会暴露，
         // 现在没有识别环节，不必为此多花一次往返。
-        if (!raw) return res.status(400).json({ error: `第 ${i + 1} 张图片是空的` });
-        if (raw.length > MAX_CHARS_PER_IMAGE) {
-          return res.status(413).json({ error: `第 ${i + 1} 张图片太大，请用手机相册里的原图重新选一次（不要用文件管理器压缩过的版本）` });
+        if (!raw) return res.status(400).json({ error: `第 ${i + 1} 份是空的` });
+
+        const rawType = String(list[i]?.mediaType || "image/jpeg");
+        const mediaType = rawType === "application/pdf" ? "application/pdf" : rawType.startsWith("image/") ? rawType : "image/jpeg";
+        const isPdf = mediaType === "application/pdf";
+        const cap = isPdf ? MAX_CHARS_PER_PDF : MAX_CHARS_PER_IMAGE;
+
+        if (raw.length > cap) {
+          return res.status(413).json({
+            error: isPdf
+              ? `第 ${i + 1} 份 PDF 太大，传不了。超过 2MB 的请重存一份小的，或者直接拍答题卡。`
+              : `第 ${i + 1} 张图片太大，请用手机相册里的原图重新选一次（不要用文件管理器压缩过的版本）`,
+          });
         }
         if (!/^[A-Za-z0-9+/=\r\n]+$/.test(raw.slice(0, 200)) || !/^[A-Za-z0-9+/=\r\n]+$/.test(raw.slice(-200))) {
-          return res.status(400).json({ error: `第 ${i + 1} 张图片数据不完整，请重选一次` });
+          return res.status(400).json({ error: `第 ${i + 1} 份数据不完整，请重选一次` });
         }
         totalChars += raw.length;
 
@@ -206,8 +223,7 @@ export default async function handler(req, res) {
         for (let p = 0; p < raw.length; p += CHUNK) chunks.push(raw.slice(p, p + CHUNK));
         cmds.push(["RPUSH", K.sheetImg(id, i), ...chunks]);
 
-        const mediaType = String(list[i]?.mediaType || "image/jpeg");
-        images.push({ n: i, mediaType: mediaType.startsWith("image/") ? mediaType : "image/jpeg", chars: raw.length, chunks: chunkCount(raw.length) });
+        images.push({ n: i, mediaType, chars: raw.length, chunks: chunkCount(raw.length) });
       }
 
       if (totalChars > MAX_CHARS_TOTAL) {
@@ -229,6 +245,9 @@ export default async function handler(req, res) {
         images,
         imageCount: images.length,
         note: String(body.note || "").trim().slice(0, 200),
+        // 家长自己传的 / 老师从微信里收到后代传的。以后要核对"这个孩子到底交没交"时，
+        // 这两种来源的可信度不一样，先记下。
+        source: body.source === "teacher" ? "teacher" : "parent",
         createdAt: now,
       };
 

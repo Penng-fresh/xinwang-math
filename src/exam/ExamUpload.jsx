@@ -34,6 +34,12 @@ const WHO_KEY = "xw_sheet_who";
 const BUDGET = 700000;
 const MAX_SHOTS = 3;
 
+// 智学网 App「分享 → 微信」出来的那份 PDF，就是孩子答题卡的扫描件：
+// 正、清晰、每块的红笔得分都在上面。它比家长举着手机拍强得多，
+// 所以必须收。但 PDF 在浏览器里没法像照片那样重编码，只能整份塞进去，
+// 所以单独给一个体积上限，超了就明确告诉家长，不要静悄悄传失败。
+const PDF_MAX_BYTES = 2 * 1024 * 1024;
+
 function readImage(file) {
   return new Promise((resolve, reject) => {
     if (!file || !String(file.type || "").startsWith("image/")) {
@@ -106,6 +112,32 @@ async function compressSheet(file) {
   return last;
 }
 
+// PDF 不压缩，原样转 base64。能不能传得上去，取决于原文件多大，
+// 所以先量体积再决定，而不是压完才发现超了。
+function readPdf(file) {
+  return new Promise((resolve, reject) => {
+    if (file.size > PDF_MAX_BYTES) {
+      return reject(
+        new Error(
+          `这份 PDF 有 ${(file.size / 1024 / 1024).toFixed(1)}MB，超过 2MB 传不了。点开 PDF 选「打印/另存」重存一份小的，或者直接拍答题卡。`
+        )
+      );
+    }
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error("这份 PDF 读不出来，换一份试试"));
+    fr.onload = (e) => {
+      const dataUrl = e.target.result;
+      resolve({
+        kind: "pdf",
+        data: String(dataUrl).split(",")[1] || "",
+        bytes: file.size,
+        name: file.name || "答题卡.pdf"
+      });
+    };
+    fr.readAsDataURL(file);
+  });
+}
+
 const labelStyle = { fontSize: 12, color: C.dim, marginBottom: 6, letterSpacing: 1 };
 
 const controlStyle = {
@@ -140,7 +172,7 @@ function Sel({ label, value, onChange, disabled, children }) {
   );
 }
 
-export default function ExamUpload() {
+export default function ExamUpload({ mode = "parent", onUploaded }) {
   const [catalog, setCatalog] = useState(null); // null = 读取中
   const [gid, setGid] = useState("");
   const [sid, setSid] = useState("");
@@ -148,6 +180,7 @@ export default function ExamUpload() {
   const [exams, setExams] = useState([]);
   const [examId, setExamId] = useState("");
   const [shots, setShots] = useState([]);
+  const [dragOver, setDragOver] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
@@ -262,19 +295,25 @@ export default function ExamUpload() {
     setErr("");
     const room = MAX_SHOTS - shots.length;
     if (room <= 0) {
-      setErr(`最多传 ${MAX_SHOTS} 张。答题卡有几页就传几张。`);
+      setErr(`最多传 ${MAX_SHOTS} 份。答题卡有几页就传几页。`);
       return;
     }
     const take = arr.slice(0, room);
     const next = [];
     try {
       for (let i = 0; i < take.length; i++) {
-        setBusy(`正在处理第 ${i + 1} 张（共 ${take.length} 张）…`);
-        next.push(await compressSheet(take[i]));
+        const f = take[i];
+        setBusy(`正在处理第 ${i + 1} 份（共 ${take.length} 份）…`);
+        if (String(f.type || "") === "application/pdf" || /\.pdf$/i.test(f.name || "")) {
+          next.push(await readPdf(f));
+        } else {
+          const im = await compressSheet(f);
+          next.push({ ...im, kind: "image" });
+        }
       }
       setShots((cur) => [...cur, ...next].slice(0, MAX_SHOTS));
     } catch (e) {
-      setErr(e.message || "图片处理失败");
+      setErr(e.message || "文件处理失败");
     } finally {
       setBusy("");
     }
@@ -284,7 +323,7 @@ export default function ExamUpload() {
     setErr("");
     if (!gid) return setErr("先选学校");
     if (!sid) return setErr("先选孩子的名字");
-    if (shots.length === 0) return setErr("还没选答题卡照片");
+    if (shots.length === 0) return setErr("还没选答题卡");
     setBusy("正在上传…");
     try {
       const r = await fetch("/api/answer-sheets", {
@@ -295,7 +334,11 @@ export default function ExamUpload() {
           sid,
           examId: examId || "",
           note,
-          images: shots.map((s) => ({ data: s.data, mediaType: "image/jpeg" }))
+          source: mode,
+          images: shots.map((s) => ({
+            data: s.data,
+            mediaType: s.kind === "pdf" ? "application/pdf" : "image/jpeg"
+          }))
         })
       });
       const d = await r.json().catch(() => ({}));
@@ -303,6 +346,7 @@ export default function ExamUpload() {
       setDone(d);
       setShots([]);
       setNote("");
+      if (onUploaded) onUploaded();
     } catch (e) {
       const isNet = /Load failed|Failed to fetch|NetworkError|network error/i.test(e.message || "");
       setErr(
@@ -323,16 +367,18 @@ export default function ExamUpload() {
         <div style={{ fontSize: 17, fontWeight: 700, color: C.dark, marginBottom: 8 }}>收到了</div>
         <div style={{ fontSize: 13.5, color: "#5a4a30", lineHeight: 1.9 }}>
           {done.studentName}
-          {done.examName ? " · " + done.examName : " · 未指定考试"} · {done.imageCount} 张
+          {done.examName ? " · " + done.examName : " · 未指定考试"} · {done.imageCount} 份
         </div>
         <div style={{ fontSize: 12.5, color: C.dim, lineHeight: 1.9, marginTop: 12 }}>
-          这次先收着。逐题分析要等卷子的难度分好类之后才能出，能出了我在群里说。
+          {mode === "teacher"
+            ? "已经挂到这个学生名下了，在下面的列表里能看到。"
+            : "这次先收着。逐题分析要等卷子的难度分好类之后才能出，能出了我在群里说。"}
         </div>
         <button
           onClick={() => setDone(null)}
           style={{ marginTop: 18, background: "transparent", border: "1px solid " + C.line, color: "#7a6a4a", borderRadius: 20, padding: "9px 22px", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}
         >
-          还有一页要传
+          {mode === "teacher" ? "再补一份" : "还有一页要传"}
         </button>
       </div>
     );
@@ -340,12 +386,29 @@ export default function ExamUpload() {
 
   // ══════════ 表单 ══════════
   const loading = catalog === null;
+  const teacher = mode === "teacher";
 
   return (
-    <div style={{ background: C.card, borderRadius: 14, border: "1px solid " + C.line, padding: "18px 16px" }}>
-      <div style={{ fontSize: 15, fontWeight: 600, color: C.dark, marginBottom: 4 }}>把答题卡传上来</div>
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files);
+      }}
+      style={{ background: C.card, borderRadius: 14, border: "1px solid " + (dragOver ? C.accent : C.line), padding: "18px 16px" }}
+    >
+      <div style={{ fontSize: 15, fontWeight: 600, color: C.dark, marginBottom: 4 }}>
+        {teacher ? "替学生补传一份" : "把答题卡传上来"}
+      </div>
       <div style={{ fontSize: 12.5, color: C.dim, lineHeight: 1.9, marginBottom: 16 }}>
-        整张平放拍，字和红笔批改要看得清。答题卡有两页就传两张。
+        {teacher
+          ? "微信里收到的图片或 PDF 直接拖进来，选好是哪个学生就行。智学网分享出来的 PDF 就是扫描件，最省事。"
+          : "整张平放拍，字和红笔批改要看得清。答题卡有两页就传两页。智学网导出的 PDF 也能传。"}
       </div>
 
       {loading && <div style={{ fontSize: 13, color: C.dim, padding: "10px 0" }}>正在读取班级名单…</div>}
@@ -418,7 +481,7 @@ export default function ExamUpload() {
           )}
 
           <div style={{ marginBottom: 14 }}>
-            <div style={labelStyle}>答题卡照片</div>
+            <div style={labelStyle}>答题卡（照片或 PDF）</div>
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 onClick={() => camRef.current?.click()}
@@ -432,8 +495,11 @@ export default function ExamUpload() {
                 disabled={!!busy || shots.length >= MAX_SHOTS}
                 style={{ flex: 1, background: C.soft, border: "1px solid " + C.line, color: "#5a4a30", borderRadius: 10, padding: "13px 0", fontSize: 14, cursor: shots.length >= MAX_SHOTS || busy ? "not-allowed" : "pointer", opacity: shots.length >= MAX_SHOTS || busy ? 0.5 : 1, fontFamily: "inherit" }}
               >
-                🖼 从相册选
+                🖼 相册 / 文件
               </button>
+            </div>
+            <div style={{ fontSize: 11.5, color: "#b0a080", marginTop: 7, lineHeight: 1.8 }}>
+              智学网分享的 PDF，先在微信里点「用其他应用打开 → 存储到文件」，再回到这里从「文件」里选。
             </div>
             <input
               ref={camRef}
@@ -449,7 +515,7 @@ export default function ExamUpload() {
             <input
               ref={fileRef}
               type="file"
-              accept="image/*"
+              accept="image/*,application/pdf,.pdf"
               multiple
               style={{ display: "none" }}
               onChange={(e) => {
@@ -462,11 +528,23 @@ export default function ExamUpload() {
               <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
                 {shots.map((s, i) => (
                   <div key={i} style={{ position: "relative", width: 84 }}>
-                    <img
-                      src={s.preview}
-                      alt={"答题卡第" + (i + 1) + "张"}
-                      style={{ width: 84, height: 108, objectFit: "cover", borderRadius: 8, border: "1px solid " + C.line, display: "block", background: "#fff" }}
-                    />
+                    {s.kind === "pdf" ? (
+                      <div
+                        title={s.name}
+                        style={{ width: 84, height: 108, borderRadius: 8, border: "1px solid #e0b0a0", background: "#fff5f0", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4 }}
+                      >
+                        <div style={{ fontSize: 15, fontWeight: 800, color: "#b04a30", letterSpacing: 0.5 }}>PDF</div>
+                        <div style={{ fontSize: 9.5, color: "#a07a6a", padding: "0 5px", textAlign: "center", lineHeight: 1.3, wordBreak: "break-all", maxHeight: 28, overflow: "hidden" }}>
+                          {s.name}
+                        </div>
+                      </div>
+                    ) : (
+                      <img
+                        src={s.preview}
+                        alt={"答题卡第" + (i + 1) + "页"}
+                        style={{ width: 84, height: 108, objectFit: "cover", borderRadius: 8, border: "1px solid " + C.line, display: "block", background: "#fff" }}
+                      />
+                    )}
                     <button
                       onClick={() => setShots((cur) => cur.filter((_, k) => k !== i))}
                       style={{ position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: 11, background: "#a04040", border: "2px solid #fff", color: "#fff", fontSize: 11, lineHeight: "18px", padding: 0, cursor: "pointer" }}
@@ -478,7 +556,7 @@ export default function ExamUpload() {
                 ))}
                 {shots.length < MAX_SHOTS && (
                   <div style={{ width: 84, height: 108, borderRadius: 8, border: "1px dashed #c8b898", display: "flex", alignItems: "center", justifyContent: "center", color: "#b0a080", fontSize: 11 }}>
-                    还能加{MAX_SHOTS - shots.length}张
+                    还能加{MAX_SHOTS - shots.length}份
                   </div>
                 )}
               </div>

@@ -85,7 +85,10 @@ export default function ExamParent({ onBack }) {
         <Card title="拍的时候注意三件事">
           <div style={{ marginBottom: 8 }}><strong>1. 整张平放。</strong>别折、别卷、别斜着拍，四个角尽量都进画面。</div>
           <div style={{ marginBottom: 8 }}><strong>2. 光线足一点。</strong>别背光，手别挡住卷子。</div>
-          <div><strong>3. 老师打的叉、写的分要看得清。</strong>这是最关键的——他错在哪一步，全在这些痕迹里。</div>
+          <div style={{ marginBottom: 8 }}><strong>3. 老师打的叉、写的分要看得清。</strong>这是最关键的——他错在哪一步，全在这些痕迹里。</div>
+          <div style={{ background: "#f0f7ff", border: "1px solid #b8d8f0", borderRadius: 10, padding: "10px 14px", fontSize: 12.5, color: "#2a5a80", lineHeight: 1.9 }}>
+            如果智学网上能导出那份 <strong>PDF</strong>，传 PDF 比拍照更清楚，系统认得更准。点「相册 / 文件」就能找到它。
+          </div>
         </Card>
 
         <div style={{ textAlign: "center" }}>
