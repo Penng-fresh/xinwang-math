@@ -22,7 +22,7 @@
 //   DELETE { id, password }    老师端：删除一份
 
 import { guardTeacher } from "../lib/auth.js";
-import { K, redisCmd, redisPipe, getJSON, newId } from "../lib/store.js";
+import { K, redisCmd, redisPipe, getJSON, getHash, newId } from "../lib/store.js";
 
 // 一次最多三张：期中数学答题卡通常 A4 双面或 A3 单面，三张足够。
 // 不放大是因为 Vercel 函数请求体上限 4.5MB，前端压到 ~70 万字符一张，
@@ -80,6 +80,64 @@ function listView(s) {
     note: s.note || "",
     createdAt: s.createdAt,
   };
+}
+
+// ── 学生身份：按姓名 find-or-create ──────────────────────
+//
+// 为什么从「老师先导名单、家长点选」改成「家长手输姓名、系统认领」：
+//   1) 要我提前把 60 个名字录进去，是纯增加的负担，而且每次接新班都要做一遍；
+//   2) 家长在页面上看到全班同学的名字，是一种轻微的暴露，换谁都不太舒服。
+//
+// 代价必须说清：没有花名册，就永远不知道「谁还没交」，后台只能数
+// 「收到几份」。老师带班知道自己班几个人，够不够心里有数，但具体是谁缺，
+// 得去群里问。
+//
+// 匹配键是「班级 + 姓名」。同一个名字出现两次就复用同一条记录 ——
+// 这依赖一个约定：换学期请直接改分组名（学生名单页有「改分组信息」），
+// 不要新建分组。新建了 gid 就变，同一个孩子的历史会断成两截。
+async function ensureStudent({ gid, school, grade, rawName }) {
+  const name = String(rawName || "").replace(/\s+/g, "").trim();
+  if (!name) return { error: "请先填孩子的姓名" };
+  if (name.length > 20) return { error: "姓名太长了，只填名字就行" };
+
+  const sids = (await redisCmd(["SMEMBERS", K.groupMembers(gid)])) || [];
+  if (sids.length > 0) {
+    const sums = await getHash(K.studentSum(), sids);
+    for (let i = 0; i < sids.length; i++) {
+      const s = sums[sids[i]];
+      if (s && (s.name === name || s.displayName === name)) {
+        const full = await getJSON(K.student(sids[i]));
+        if (full) return { sid: sids[i], student: full };
+      }
+    }
+  }
+
+  const sid = "s" + newId();
+  const stu = {
+    sid,
+    name,
+    displayName: name,
+    school: school || "",
+    grade: grade || "",
+    gid,
+    createdAt: new Date().toISOString(),
+    subCount: 0,
+    series: [],
+    highlights: {},
+  };
+
+  // 跟 roster.js 建学生的写法保持一致，家长自建的也能出现在「学生名单」页签里
+  await redisPipe([
+    ["SET", K.student(sid), JSON.stringify(stu)],
+    ["ZADD", K.studentIdx(), String(Date.now()), sid],
+    ["HSET", K.studentSum(), sid, JSON.stringify({
+      sid, name, displayName: name, school: stu.school, grade: stu.grade, gid,
+      subCount: 0, createdAt: stu.createdAt,
+    })],
+    ["SADD", K.groupMembers(gid), sid],
+  ]);
+
+  return { sid, student: stu, created: true };
 }
 
 export default async function handler(req, res) {
@@ -160,22 +218,36 @@ export default async function handler(req, res) {
       body = body || {};
 
       const gid = String(body.gid || "");
-      const sid = String(body.sid || "");
       if (!gid) return res.status(400).json({ error: "没有选班级" });
-      if (!sid) return res.status(400).json({ error: "没有选学生" });
-
-      // 学生必须真的在这个班里。否则前端被改（或 sid 抄错）会把答题卡挂到别人名下，
-      // 而这种错在分析报告里完全看不出来 —— 宁可在这里挡住。
-      const isMember = await redisCmd(["SISMEMBER", K.groupMembers(gid), sid]);
-      if (Number(isMember) !== 1) {
-        return res.status(400).json({ error: "这个学生不在所选班级里，请重新选择" });
-      }
 
       const group = await getJSON(K.group(gid));
       if (!group) return res.status(404).json({ error: "这个班级不存在，请刷新页面重选" });
 
-      const student = await getJSON(K.student(sid));
-      if (!student) return res.status(404).json({ error: "找不到这个学生，请刷新页面重选" });
+      // 身份解析：老家长带着 sid 来（本机记过），新家长只有名字。
+      // 名字走 find-or-create —— 这是刻意的，见下面 ensureStudent 的注释。
+      let sid = String(body.sid || "");
+      let student = null;
+
+      if (sid) {
+        // 学生必须真的在这个班里。否则前端被改（或 sid 抄错）会把答题卡挂到别人名下，
+        // 而这种错在分析报告里完全看不出来 —— 宁可在这里挡住。
+        const isMember = await redisCmd(["SISMEMBER", K.groupMembers(gid), sid]);
+        if (Number(isMember) !== 1) {
+          return res.status(400).json({ error: "这个学生不在所选班级里，请重新填写姓名" });
+        }
+        student = await getJSON(K.student(sid));
+        if (!student) return res.status(404).json({ error: "找不到这个学生，请重新填写姓名" });
+      } else {
+        const r = await ensureStudent({
+          gid,
+          school: group.school || "",
+          grade: group.grade || "",
+          rawName: body.studentName
+        });
+        if (r.error) return res.status(400).json({ error: r.error });
+        sid = r.sid;
+        student = r.student;
+      }
 
       // 考试是可选的：老师还没建考试的时候，家长照样能传，
       // 先按「未指定考试」收着，等卷子结构有了再挂上去，不阻塞收集。
@@ -264,7 +336,8 @@ export default async function handler(req, res) {
 
       await redisPipe(pipe);
 
-      return res.status(200).json({ ok: true, id, imageCount: images.length, examName: meta.examName, studentName: meta.studentName });
+      // 把 sid 回给前端，这台设备下次直接用 sid 认人，不必再按名字匹配
+      return res.status(200).json({ ok: true, id, sid, imageCount: images.length, examName: meta.examName, studentName: meta.studentName });
     }
 
     // ══════════ 删除 ══════════

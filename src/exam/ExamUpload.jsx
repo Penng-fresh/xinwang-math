@@ -27,7 +27,28 @@ const C = {
   cream: "#f0e8d0"
 };
 
-const WHO_KEY = "xw_sheet_who";
+// 这台设备上输过的孩子：[{gid, name, sid, at}]，最多存 10 条。
+// 只存在家长自己的手机里，服务端不返回任何名单 —— 所以既要让老家长零打字，
+// 又不能让任何人的名字被别人看见，只能靠这个。
+const PEOPLE_KEY = "xw_sheet_people";
+
+function loadPeople() {
+  try {
+    const v = JSON.parse(localStorage.getItem(PEOPLE_KEY) || "[]");
+    if (!Array.isArray(v)) return [];
+    return v.filter((p) => p && p.gid && p.name);
+  } catch (_) {
+    return [];
+  }
+}
+
+function savePerson(p) {
+  try {
+    const list = loadPeople().filter((x) => !(x.gid === p.gid && x.name === p.name));
+    list.unshift({ gid: p.gid, name: p.name, sid: p.sid || "", at: Date.now() });
+    localStorage.setItem(PEOPLE_KEY, JSON.stringify(list.slice(0, 10)));
+  } catch (_) {}
+}
 
 // 单张图 base64 字符数上限。Vercel 函数请求体 4.5MB，三张 70 万字符约 2.1MB，
 // 留足余量；同时 70 万字符（≈52 万字节）的 JPEG 存一份也不至于太贵。
@@ -198,7 +219,8 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
   const [catalog, setCatalog] = useState(null); // null = 读取中
   const [gid, setGid] = useState("");
   const [sid, setSid] = useState("");
-  const [students, setStudents] = useState([]);
+  const [name, setName] = useState("");
+  const [people, setPeople] = useState([]);
   const [exams, setExams] = useState([]);
   const [examId, setExamId] = useState("");
   const [shots, setShots] = useState([]);
@@ -225,19 +247,17 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
         const schools = Array.isArray(d.schools) ? d.schools : [];
         setCatalog(schools);
 
-        let saved = null;
-        try {
-          saved = JSON.parse(localStorage.getItem(WHO_KEY) || "null");
-        } catch (_) {
-          saved = null;
-        }
-        if (!saved?.gid) return;
-        // 上次的班级可能已经被删了，先确认它还在目录里，再恢复
-        const alive_gids = [];
-        schools.forEach((s) => (s.groups || []).forEach((g) => alive_gids.push(g.gid)));
-        if (!alive_gids.includes(saved.gid)) return;
-        setGid(saved.gid);
-        if (saved.sid) setSid(saved.sid);
+        const list = loadPeople();
+        setPeople(list);
+        if (list.length === 0) return;
+        // 恢复最近一次用的班级和名字。班级可能已经被删了，先确认还在目录里。
+        const gids = [];
+        schools.forEach((s) => (s.groups || []).forEach((g) => gids.push(g.gid)));
+        const last = list.find((p) => gids.includes(p.gid));
+        if (!last) return;
+        setGid(last.gid);
+        setName(last.name);
+        if (last.sid) setSid(last.sid);
       } catch (e) {
         if (!alive) return;
         setCatalog([]);
@@ -249,32 +269,23 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
     };
   }, []);
 
-  // ── 选了班级：读名单 + 这个班开放中的考试 ──
+  // ── 选了班级：读这个班开放中的考试（不再拉名单）──
   useEffect(() => {
     if (!gid) {
-      setStudents([]);
       setExams([]);
       return;
     }
     let alive = true;
     (async () => {
       try {
-        const [r1, r2] = await Promise.all([
-          fetch("/api/roster?view=pick&gid=" + encodeURIComponent(gid)),
-          fetch("/api/exams?view=open&gid=" + encodeURIComponent(gid))
-        ]);
-        const d1 = await r1.json().catch(() => ({}));
+        const r2 = await fetch("/api/exams?view=open&gid=" + encodeURIComponent(gid));
         const d2 = await r2.json().catch(() => ({}));
         if (!alive) return;
-        const list = Array.isArray(d1.students) ? d1.students : [];
-        setStudents(list);
-        setSid((cur) => (cur && list.some((s) => s.sid === cur) ? cur : ""));
         const openExams = Array.isArray(d2.exams) ? d2.exams : [];
         setExams(openExams);
         setExamId((cur) => (cur && openExams.some((e) => e.id === cur) ? cur : openExams[0]?.id || ""));
       } catch (_) {
         if (!alive) return;
-        setStudents([]);
         setExams([]);
       }
     })();
@@ -283,13 +294,15 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
     };
   }, [gid]);
 
-  // ── 记住这次选的学生 ──
+  // ── 名字变了：本机记过的（同班同名）直接用 sid，没记过就交给服务端认领 ──
   useEffect(() => {
-    if (!gid || !sid) return;
-    try {
-      localStorage.setItem(WHO_KEY, JSON.stringify({ gid, sid }));
-    } catch (_) {}
-  }, [gid, sid]);
+    if (!gid || !name) {
+      setSid("");
+      return;
+    }
+    const hit = people.find((p) => p.gid === gid && p.name === name);
+    setSid(hit?.sid || "");
+  }, [gid, name, people]);
 
   // ── 这个学生之前传过几份 ──
   useEffect(() => {
@@ -310,6 +323,9 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
 
   const school = catalog?.find((s) => (s.groups || []).some((g) => g.gid === gid));
   const classList = school?.groups || [];
+  // 这台设备在这个班输过的名字。别的家长的名字永远不会出现在这里 ——
+  // 数据只在本地，服务端根本不返回名单。
+  const sameGid = gid ? people.filter((p) => p.gid === gid) : [];
 
   const addFiles = async (files) => {
     const arr = Array.from(files || []);
@@ -355,7 +371,7 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
   const submit = async () => {
     setErr("");
     if (!gid) return setErr("先选学校");
-    if (!sid) return setErr("先选孩子的名字");
+    if (!name.trim()) return setErr("先填孩子的姓名");
     if (shots.length === 0) return setErr("还没选答题卡");
     setBusy("正在上传…");
     try {
@@ -364,7 +380,9 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           gid,
-          sid,
+          // 本机记过就带 sid（最快最准）；没记过只给名字，服务端按「班级+姓名」认领或新建
+          sid: sid || "",
+          studentName: sid ? "" : name.trim(),
           examId: examId || "",
           note,
           source: mode,
@@ -376,6 +394,11 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || d.error) throw new Error(d?.error || r.statusText);
+      if (d.sid) {
+        setSid(d.sid);
+        savePerson({ gid, name: d.studentName || name.trim(), sid: d.sid });
+        setPeople(loadPeople());
+      }
       setDone(d);
       setShots([]);
       setNote("");
@@ -448,7 +471,7 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
 
       {!loading && catalog.length === 0 && (
         <div style={{ background: "#fdf3dc", border: "1px solid #e8c870", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#7a5a20", lineHeight: 1.9 }}>
-          {loadErr ? "名单读取失败：" + loadErr : "班级名单还没建好，暂时没法选名字。先联系我。"}
+          {loadErr ? "班级读取失败：" + loadErr : "彭老师还没建班，现在传不了，先联系我。"}
         </div>
       )}
 
@@ -461,6 +484,7 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
               const s = catalog.find((x) => x.school === e.target.value);
               setGid(s?.groups?.[0]?.gid || "");
               setSid("");
+              setName("");
             }}
           >
             <option value="">请选择</option>
@@ -478,6 +502,7 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
               onChange={(e) => {
                 setGid(e.target.value);
                 setSid("");
+                setName("");
               }}
             >
               {classList.map((g) => (
@@ -488,14 +513,44 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
             </Sel>
           )}
 
-          <Sel label="孩子姓名" value={sid} onChange={(e) => setSid(e.target.value)} disabled={students.length === 0}>
-            <option value="">{!gid ? "先选学校" : students.length === 0 ? "这个班还没有名单" : "请选择"}</option>
-            {students.map((s) => (
-              <option key={s.sid} value={s.sid}>
-                {s.name}
-              </option>
-            ))}
-          </Sel>
+          <div style={{ marginBottom: 12 }}>
+            <div style={labelStyle}>孩子姓名</div>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value.replace(/\s+/g, ""))}
+              placeholder={gid ? "填孩子的名字，和学校里用的一致" : "先选学校"}
+              disabled={!gid}
+              maxLength={20}
+              style={{ ...controlStyle, background: gid ? "#fff" : C.soft }}
+            />
+            {sameGid.length > 0 && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                {sameGid.map((p) => (
+                  <button
+                    key={p.name}
+                    onClick={() => setName(p.name)}
+                    style={{
+                      background: name === p.name ? "#2a2218" : C.soft,
+                      color: name === p.name ? C.cream : "#7a6a4a",
+                      border: "1px solid " + (name === p.name ? C.dark : C.line),
+                      borderRadius: 16,
+                      padding: "6px 14px",
+                      fontSize: 13,
+                      cursor: "pointer",
+                      fontFamily: "inherit"
+                    }}
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {gid && name && !sid && (
+              <div style={{ fontSize: 11.5, color: C.dim, marginTop: 7, lineHeight: 1.8 }}>
+                这个名字是第一次填，会新建一条记录。以后在这台手机上再传，点上面那个名字就行。
+              </div>
+            )}
+          </div>
 
           {exams.length > 1 && (
             <Sel label="哪一场考试" value={examId} onChange={(e) => setExamId(e.target.value)}>

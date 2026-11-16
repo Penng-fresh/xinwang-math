@@ -234,7 +234,7 @@ export default function SheetInbox({ password }) {
           <div style={{ fontSize: 34, marginBottom: 10 }}>📭</div>
           <div style={{ fontSize: 14 }}>还没有收到答题卡</div>
           <div style={{ fontSize: 12, color: C.dim, marginTop: 8, lineHeight: 1.9 }}>
-            把 xinwang-math.com 的「考试答题卡上传」链接发群里，<br />家长选名字、拍照就传上来了。<br />家长直接发你微信的 PDF，点上面的「我自己补传」拖进来。
+            把 xinwang-math.com 的「考试答题卡上传」链接发群里，<br />家长填名字、拍照就传上来了。<br />家长直接发你微信的 PDF，点上面的「我自己补传」拖进来。
           </div>
         </div>
       ) : (
