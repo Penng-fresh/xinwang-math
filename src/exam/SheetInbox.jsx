@@ -361,7 +361,7 @@ export default function SheetInbox({ password }) {
                 <option key={ex.id} value={ex.id}>
                   {ex.name}
                   {ex.date ? " · " + ex.date : ""}
-                  {ex.status !== "open" ? "（已停）" : ""}
+                  {ex.status === "closed" ? "（已停）" : ""}
                 </option>
               ))}
             </select>
