@@ -5,11 +5,11 @@
 //             "这个孩子这两次都交了没"的视角，逐份清单看不出来。
 //   按提交 —— 按收到时间倒序，用来核对"群里说传完了的那几个，到底传上没有"。
 //
-// 这一版只做「看收到了什么」，不做分析。但有两个信息是老师现在就要的，
-// 少了这个页面就等于白收：
+// 现在这一页不只看「收到了什么」，还要看 AI 读分和三档丢分结论。
+// 但底下两件事仍然一个都不能少：
 //   1) 这个班谁没交 —— 追家长只能靠这个，靠翻聊天记录会漏人；
 //      不预导名单，所以这里的"没交"是"上次交过、这次没交"，不是"从没交过"
-//   2) 原件能下载下来 —— 分析在本地跑（识别成本、可复核），
+//   2) 原件能下载下来 —— AI 也会读错，老师要能对着原卷复核；
 //      所以必须能把 jpg 落到硬盘上，不能只能在线看
 //
 // 列表永远不取图片字节：一份 2000px 的答题卡 base64 有 50 万字符，
@@ -34,6 +34,212 @@ const C = {
   good: "#3a8a3a",
   goodBg: "#e8f5e8"
 };
+
+// 三档顺序固定：老师配卷子结构时就是这个顺序，报告里不要按别的方式重排。
+const AI_LEVELS = [
+  ["base", "不该丢", "#c03030", "#fde8e8", "#f0a0a0"],
+  ["mid", "讲过", "#a06a10", "#fdf3dc", "#e8c870"],
+  ["hard", "压轴", "#5a5a5a", "#eeeeee", "#c8c8c8"]
+];
+
+function analysisBadge(a, hasExam) {
+  if (!hasExam) return { text: "未挂考试", bg: C.soft, color: C.dim, border: C.line };
+  if (!a) return { text: "待分析", bg: C.soft, color: C.dim, border: C.line };
+  if (a.status === "running") return { text: "AI 分析中", bg: "#eef2ff", color: "#4050a0", border: "#b8c2ee" };
+  if (a.status === "error") return { text: "分析失败", bg: C.dangerBg, color: C.danger, border: "#e8a0a0" };
+  if (a.status === "done" && a.ok) return { text: "AI 已完成", bg: C.goodBg, color: C.good, border: "#a8d0a8" };
+  if (a.status === "pending") {
+    return {
+      text: (a.error || "").includes("卷子结构") ? "待配卷子" : "待分析",
+      bg: "#fdf3dc",
+      color: "#a06810",
+      border: "#e8c870"
+    };
+  }
+  return { text: "待分析", bg: C.soft, color: C.dim, border: C.line };
+}
+
+function AnalysisBadge({ analysis, hasExam }) {
+  const b = analysisBadge(analysis, hasExam);
+  return (
+    <span
+      style={{
+        background: b.bg,
+        border: "1px solid " + b.border,
+        color: b.color,
+        borderRadius: 6,
+        padding: "0 6px",
+        fontSize: 10.5,
+        lineHeight: "18px",
+        whiteSpace: "nowrap",
+        flexShrink: 0
+      }}
+    >
+      {b.text}
+    </span>
+  );
+}
+
+// 一份答题卡的 AI 报告。两个视角共用，避免改一处忘一处。
+function AnalysisReport({ sheet, manualScore, analysis, busy, onRetry }) {
+  const a = analysis;
+  const manual = manualScore === undefined || manualScore === null || manualScore === "" ? null : Number(manualScore);
+  const retryBtn = (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onRetry();
+      }}
+      disabled={!!busy}
+      style={{
+        background: C.soft,
+        border: "1px solid " + C.line,
+        color: busy ? C.dim : "#7a6a4a",
+        borderRadius: 8,
+        padding: "6px 11px",
+        fontSize: 11.5,
+        cursor: busy ? "default" : "pointer",
+        fontFamily: "inherit",
+        flexShrink: 0
+      }}
+    >
+      {busy ? "重跑中…" : "重新分析"}
+    </button>
+  );
+
+  if (!sheet.examId) {
+    return (
+      <div style={{ marginTop: 10, background: C.soft, border: "1px solid " + C.line, borderRadius: 10, padding: "10px 12px", fontSize: 12, color: C.dim, lineHeight: 1.8 }}>
+        这份还没挂到某场考试，不会触发 AI 分析。先在上面选「这场属于」。
+      </div>
+    );
+  }
+
+  if (!a) {
+    return (
+      <div style={{ marginTop: 10, background: C.soft, border: "1px solid " + C.line, borderRadius: 10, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ flex: 1, fontSize: 12, color: C.muted, lineHeight: 1.8 }}>
+          AI 分析还没写回来。刷新页面看看；实在没有就点右边重跑。
+        </div>
+        {retryBtn}
+      </div>
+    );
+  }
+
+  if (a.status === "running") {
+    return (
+      <div style={{ marginTop: 10, background: "#eef2ff", border: "1px solid #b8c2ee", borderRadius: 10, padding: "10px 12px", fontSize: 12, color: "#4050a0", lineHeight: 1.8 }}>
+        正在读这张卷子的红笔分数，通常要半分钟。原件已经收下来了，等会儿刷新就能看到。
+      </div>
+    );
+  }
+
+  if (a.status === "pending" || a.status === "error" || !a.ok) {
+    return (
+      <div style={{ marginTop: 10, background: a.status === "error" ? C.dangerBg : "#fdf3dc", border: "1px solid " + (a.status === "error" ? "#e8a0a0" : "#e8c870"), borderRadius: 10, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ flex: 1, fontSize: 12, color: a.status === "error" ? "#a03030" : "#7a5a20", lineHeight: 1.8 }}>
+          {a.status === "error" ? "AI 分析没成功：" : "暂时出不了报告："}{a.error || "再试一次"}
+        </div>
+        {retryBtn}
+      </div>
+    );
+  }
+
+  const aiTotal = a.score?.total ?? null;
+  const lost = a.lost || {};
+  const sum = a.score || {};
+  const mismatch = manual !== null && !Number.isNaN(manual) && aiTotal !== null && Number(manual) !== Number(aiTotal);
+  const problems = (a.check?.problems || []).filter(Boolean);
+
+  return (
+    <div style={{ marginTop: 10, background: C.soft, border: "1px solid " + C.line, borderRadius: 10, padding: "11px 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: C.dark }}>
+          AI 分析 · {a.paperTitle || "卷子结构"}
+          {a.analyzedFirstOnly && <span style={{ fontSize: 10.5, color: C.dim, fontWeight: 400, marginLeft: 6 }}>（只读了第一张图）</span>}
+        </div>
+        {retryBtn}
+      </div>
+
+      {mismatch && (
+        <div style={{ marginTop: 9, background: C.dangerBg, border: "1px solid #e8a0a0", borderRadius: 8, padding: "8px 10px", fontSize: 11.5, color: "#a03030", lineHeight: 1.8 }}>
+          AI 读到 <b>{aiTotal}</b> 分，你记的是 <b>{manual}</b> 分。两个对不上，点开原件核对一下。
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+        {[
+          ["AI 总分", aiTotal === null ? "未读到" : aiTotal + " 分"],
+          ["手填分", manual === null ? "未填" : manual + " 分"],
+          ["合计丢分", sum.lostAll === undefined ? "—" : sum.lostAll + " 分"]
+        ].map(([k, v]) => (
+          <div key={k} style={{ flex: "1 1 90px", background: C.card, border: "1px solid " + C.line, borderRadius: 8, padding: "7px 9px" }}>
+            <div style={{ fontSize: 10.5, color: C.dim }}>{k}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.dark, marginTop: 2 }}>{v}</div>
+          </div>
+        ))}
+      </div>
+
+      {problems.length > 0 && (
+        <div style={{ marginTop: 9, fontSize: 11, color: "#8a6a20", lineHeight: 1.9 }}>
+          ⚠ 读分核对：{problems.slice(0, 3).join("；")}
+          {a.check?.aiNotes ? "；模型备注：" + a.check.aiNotes : ""}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+        {AI_LEVELS.map(([key, name, color, bg, border]) => {
+          const rows = (a.groups?.[key] || []);
+          return (
+            <div key={key} style={{ flex: 1, minWidth: 0, background: bg, border: "1px solid " + border, borderRadius: 8, padding: "8px 9px" }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 4 }}>
+                <span style={{ fontSize: 11, color, fontWeight: 700 }}>{name}</span>
+                <span style={{ fontSize: 13, color, fontWeight: 700 }}>{lost[key] || 0} 分</span>
+              </div>
+              <div style={{ fontSize: 10.5, color: "#7a6a5a", marginTop: 5, lineHeight: 1.7 }}>
+                {rows.length === 0 ? "没有丢分" : rows.slice(0, 4).map((r) => `${r.label || r.name || "某题"} -${r.lost}`).join("、")}
+                {rows.length > 4 ? "…" : ""}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {(a.rows || []).length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 10.5, color: C.dim, marginBottom: 4 }}>读分明细</div>
+          {a.rows.map((r, i) => {
+            const level = AI_LEVELS.find((x) => x[0] === r.level);
+            const known = r.score !== null && !r.invalid;
+            return (
+              <div
+                key={r.key || i}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1.4fr 1fr 58px 58px 58px",
+                  gap: 4,
+                  alignItems: "center",
+                  padding: "4px 2px",
+                  borderTop: "1px dashed " + C.line,
+                  fontSize: 10.5,
+                  color: C.muted
+                }}
+              >
+                <span style={{ color: C.dark, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.label}{r.name ? " " + r.name : ""}</span>
+                <span style={{ color: level ? level[2] : C.dim }}>{level ? level[1] : "未分档"}</span>
+                <span>{known ? r.score : "未读到"}</span>
+                <span>{r.fullScore}</span>
+                <span style={{ color: known && r.fullScore - r.score > 0 ? C.danger : C.good }}>
+                  {known ? "-" + (r.fullScore - r.score) : "—"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function when(ts) {
   if (!ts) return "";
@@ -110,6 +316,20 @@ function SheetImages({ sheet, data, busy, onRemove }) {
   });
 }
 
+// 一次把当前列表里所有答题卡的分析状态取回来，展开时直接用。
+// 不塞进 answer-sheets 列表接口：那份接口只碰 sheet meta，分析是另一份数据，
+// 混在一起会让每次刷新多读几十条 JSON。
+async function fetchAnalyses(ids, password) {
+  const clean = [...new Set((ids || []).filter(Boolean))].slice(0, 50);
+  if (clean.length === 0) return {};
+  const r = await fetch(
+    `/api/analysis?view=many&ids=${encodeURIComponent(clean.join(","))}&password=${encodeURIComponent(password)}`
+  );
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d?.error || "读取分析失败");
+  return d.analyses || {};
+}
+
 export default function SheetInbox({ password }) {
   const [catalog, setCatalog] = useState([]);
   const [gid, setGid] = useState("");
@@ -129,6 +349,8 @@ export default function SheetInbox({ password }) {
   const [imgs, setImgs] = useState({}); // id -> [{dataUrl}] 或 {error}
   const [scores, setScores] = useState({}); // sid|examId -> 分数
   const [imgBusy, setImgBusy] = useState("");
+  const [analyses, setAnalyses] = useState({}); // sheet id -> AI 分析状态/报告
+  const [rerunBusy, setRerunBusy] = useState("");
 
   const load = async (filterGid, wantMode, filterExam) => {
     const m = wantMode || mode;
@@ -148,6 +370,15 @@ export default function SheetInbox({ password }) {
         setSheets(Array.isArray(d.sheets) ? d.sheets : []);
       }
       setStats(d.stats || { count: 0, students: 0 });
+
+      // AI 报告另存一份，不混进 sheet meta。按学生视角要把每人名下的历次摊平。
+      const rows = m === "student"
+        ? (Array.isArray(d.students) ? d.students : []).flatMap((stu) => stu.sheets || [])
+        : (Array.isArray(d.sheets) ? d.sheets : []);
+      try {
+        const amap = await fetchAnalyses(rows.map((x) => x.id), password);
+        setAnalyses((cur) => ({ ...cur, ...amap }));
+      } catch (_) {}
 
       // 分数不混在答题卡列表里：一场可能传三页，分只有一条。
       // 这里把当前筛选下能用到的分一次取回来，展开学生时直接用。
@@ -208,6 +439,31 @@ export default function SheetInbox({ password }) {
       alive = false;
     };
   }, [gid]);
+
+  // 自动分析是上传后后台跑的：老师可能正好开着页面，状态从 running 变成 done。
+  // 只追刚跑起来的那几分钟，不把"待配卷子"这种稳定状态无限轮询下去。
+  useEffect(() => {
+    const ageOf = (a) => {
+      const t = a?.updatedAt ? Date.parse(a.updatedAt) : Date.now();
+      return Number.isFinite(t) ? Date.now() - t : 0;
+    };
+    const polling = Object.entries(analyses)
+      .filter(([, a]) => {
+        if (!a) return false;
+        if (a.status === "running") return ageOf(a) < 180000;
+        if (a.status === "pending" && !a.error) return ageOf(a) < 120000;
+        return false;
+      })
+      .map(([id]) => id);
+    if (polling.length === 0) return;
+    const t = setTimeout(async () => {
+      try {
+        const amap = await fetchAnalyses(polling, password);
+        setAnalyses((cur) => ({ ...cur, ...amap }));
+      } catch (_) {}
+    }, 6000);
+    return () => clearTimeout(t);
+  }, [analyses, password]);
 
   // 两个视角各有一份数据，缺交判断要跟着当前视角走 ——
   // 只认 students 的话，切到「按提交」再换班级，算的是旧班的人。
@@ -325,6 +581,29 @@ export default function SheetInbox({ password }) {
       await load(gid, mode);
     } catch (err2) {
       alert("改挂失败：" + (err2.message || "网络问题"));
+    }
+  };
+
+  // 手动重跑：卷子结构配好了、图换清楚了、或者后台那次分析超时了，都从这里再来一次。
+  const rerunAnalysis = async (s) => {
+    setRerunBusy(s.id);
+    try {
+      const r = await fetch("/api/analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: s.id, password })
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok && !d.analysis) throw new Error(d?.error || "重跑失败");
+      setAnalyses((cur) => ({ ...cur, [s.id]: d.analysis || { id: s.id, status: "running", ok: false, error: "" } }));
+      if (!r.ok) alert("这次没当场跑完，后台可能还在跑。稍后点刷新再看。");
+    } catch (e) {
+      // Vercel 免费版函数可能比 AI 读图先超时。原件和触发都在，
+      // 这里先显示"分析中"，让老师去刷新，不要误以为按钮没生效。
+      setAnalyses((cur) => ({ ...cur, [s.id]: { id: s.id, status: "running", ok: false, error: "", updatedAt: new Date().toISOString() } }));
+      alert("重跑已提交，可能还在后台跑。稍后点刷新再看。");
+    } finally {
+      setRerunBusy("");
     }
   };
 
@@ -548,6 +827,7 @@ export default function SheetInbox({ password }) {
                                     {scores[stu.sid + "|" + sh.examId]} 分 ✎
                                   </span>
                                 )}
+                                <AnalysisBadge analysis={analyses[sh.id]} hasExam={!!sh.examId} />
                               </div>
                               <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
                                 {kindText(sh)} · {sh.source === "teacher" ? "你补传的" : "家长传的"} · {when(sh.createdAt)}
@@ -563,6 +843,13 @@ export default function SheetInbox({ password }) {
                           </div>
                           {expanded && (
                             <div style={{ paddingBottom: 6 }}>
+                              <AnalysisReport
+                                sheet={withName}
+                                manualScore={scores[stu.sid + "|" + sh.examId]}
+                                analysis={analyses[sh.id]}
+                                busy={rerunBusy === sh.id}
+                                onRetry={() => rerunAnalysis(sh)}
+                              />
                               <SheetImages sheet={withName} data={mine} busy={imgBusy === sh.id} onRemove={(e) => remove(withName, e)} />
                             </div>
                           )}
@@ -606,6 +893,7 @@ export default function SheetInbox({ password }) {
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{s.studentName}</span>
                     <span style={{ fontSize: 11.5, color: C.dim }}>{classLabel(s)}</span>
+                    <AnalysisBadge analysis={analyses[s.id]} hasExam={!!s.examId} />
                   </div>
                   <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {s.examName || "未指定考试"} · {when(s.createdAt)}
@@ -635,6 +923,13 @@ export default function SheetInbox({ password }) {
                       </select>
                     </div>
                   )}
+                  <AnalysisReport
+                    sheet={s}
+                    manualScore={scores[s.sid + "|" + s.examId]}
+                    analysis={analyses[s.id]}
+                    busy={rerunBusy === s.id}
+                    onRetry={() => rerunAnalysis(s)}
+                  />
                   <SheetImages sheet={s} data={mine} busy={imgBusy === s.id} onRemove={(e) => remove(s, e)} />
                 </div>
               )}

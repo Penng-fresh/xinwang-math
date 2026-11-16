@@ -251,6 +251,8 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [done, setDone] = useState(null);
+  // 家长上传成功后等后台 AI 出结论。只给结论，不给老师用的核对细节。
+  const [parentAnalysis, setParentAnalysis] = useState(null);
   const [mine, setMine] = useState(null);
   const [loadErr, setLoadErr] = useState("");
 
@@ -325,6 +327,38 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
       alive = false;
     };
   }, [gid]);
+
+  // ── 上传成功后，等家长自己那一份的 AI 初步结论 ──
+  // 分析在后台跑，家长不用对着上传按钮转圈；结论出来前只显示一行进度。
+  // 只认 sheet id + sid，sid 是随机串且必须和档案一致，不会看到别人家的孩子。
+  useEffect(() => {
+    setParentAnalysis(null);
+    if (!done || mode !== "parent" || !done.analyzing || !done.id || !done.sid) return;
+    let alive = true;
+    let timer = null;
+    let tries = 0;
+    let stop = false;
+    const poll = async () => {
+      try {
+        const r = await fetch(
+          `/api/analysis?view=mine&id=${encodeURIComponent(done.id)}&sid=${encodeURIComponent(done.sid)}`
+        );
+        const d = await r.json().catch(() => ({}));
+        if (alive && r.ok) {
+          const a = d.analysis || null;
+          setParentAnalysis(a);
+          if (a && (a.status === "done" || a.status === "error" || (a.status === "pending" && a.error))) stop = true;
+        }
+      } catch (_) {}
+      tries += 1;
+      if (alive && !stop && tries < 30) timer = setTimeout(poll, 5000);
+    };
+    poll();
+    return () => {
+      alive = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [done?.id, done?.sid, done?.analyzing, mode]);
 
   // ── 名字变了：本机记过的（同班同名）直接用 sid，没记过就交给服务端认领 ──
   useEffect(() => {
@@ -444,6 +478,7 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
         savePerson({ gid, name: d.studentName || name.trim(), sid: d.sid, school: studentSchool.trim() });
         setPeople(loadPeople());
       }
+      setParentAnalysis(null);
       setDone(d);
 
       // 分数单独存。答题卡已经传上去了，就算这一步失败也不能让用户以为没传成 ——
@@ -461,7 +496,12 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
         } catch (_) {}
       }
 
-      setDone({ ...d, scoreSaved, scoreWanted: !!String(score).trim() });
+      setDone({
+        ...d,
+        scoreSaved,
+        scoreWanted: !!String(score).trim(),
+        parentScore: String(score).trim() ? Number(score) : null
+      });
       setShots([]);
       setNote("");
       setScore("");
@@ -480,6 +520,13 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
 
   // ══════════ 上传成功 ══════════
   if (done) {
+    const pa = parentAnalysis;
+    const paMismatch = pa && pa.ok && pa.total !== null && done.parentScore !== null && Number(done.parentScore) !== Number(pa.total);
+    const PA_LEVELS = [
+      ["base", "不该丢", "#c03030", "#fde8e8"],
+      ["mid", "讲过", "#a06a10", "#fdf3dc"],
+      ["hard", "压轴", "#5a5a5a", "#eeeeee"]
+    ];
     return (
       <div style={{ background: C.card, borderRadius: 14, border: "1px solid " + C.line, padding: "26px 20px", textAlign: "center" }}>
         <div style={{ width: 54, height: 54, borderRadius: 27, background: "#e8f5e0", color: "#3a8a3a", fontSize: 26, lineHeight: "54px", margin: "0 auto 14px" }}>✓</div>
@@ -491,8 +538,44 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
         <div style={{ fontSize: 12.5, color: C.dim, lineHeight: 1.9, marginTop: 12 }}>
           {mode === "teacher"
             ? "已经挂到这个学生名下了，在下面的列表里能看到。"
-            : "这次先收着。逐题分析要等卷子的难度分好类之后才能出，能出了我在群里说。"}
+            : "原件收到了。我这边正在自动核对卷面，稍等一下就能看到初步结果。"}
         </div>
+        {mode === "parent" && done.analyzing && (
+          <div style={{ marginTop: 12, textAlign: "left", background: C.soft, border: "1px solid " + C.line, borderRadius: 10, padding: "11px 12px" }}>
+            {!pa || pa.status === "running" || (pa.status === "pending" && !pa.error) ? (
+              <div style={{ fontSize: 12.5, color: "#7a6a4a", lineHeight: 1.9 }}>
+                正在自动核对卷面…这一步只读红笔分数，先不用管。
+              </div>
+            ) : pa.status === "done" && pa.ok ? (
+              <>
+                <div style={{ fontSize: 12.5, color: C.dark, lineHeight: 1.9 }}>
+                  初步读分：<b>{pa.total === null ? "没读清" : pa.total + " 分"}</b>
+                  {pa.needsReview ? "，有几处要我再对一下原卷。" : "。"}
+                </div>
+                {paMismatch && (
+                  <div style={{ fontSize: 11.5, color: "#a03030", lineHeight: 1.8, marginTop: 4 }}>
+                    和你填的 {done.parentScore} 分对不上，我会按原卷再核一遍。
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 6, marginTop: 9 }}>
+                  {PA_LEVELS.map(([key, name, color, bg]) => (
+                    <div key={key} style={{ flex: 1, minWidth: 0, background: bg, borderRadius: 7, padding: "7px 8px", textAlign: "center" }}>
+                      <div style={{ fontSize: 10.5, color }}>{name}</div>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, color, marginTop: 2 }}>丢 {pa.lost?.[key] || 0} 分</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontSize: 10.5, color: C.dim, lineHeight: 1.8, marginTop: 8 }}>
+                  这是初步结果，最后以老师讲评为准。
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 12.5, color: "#7a6a4a", lineHeight: 1.9 }}>
+                初步核对暂时没出来，原件已经收到了，我会看原卷。
+              </div>
+            )}
+          </div>
+        )}
         {done.scoreWanted && !done.scoreSaved && (
           <div style={{ background: "#fdf3dc", border: "1px solid #e8c870", borderRadius: 8, padding: "9px 12px", marginTop: 12, fontSize: 12, color: "#7a5a20", lineHeight: 1.8 }}>
             答题卡收到了，但分数没记上。等下在群里告诉我一声，我补进去。

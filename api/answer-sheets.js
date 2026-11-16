@@ -25,6 +25,7 @@
 
 import { guardTeacher } from "../lib/auth.js";
 import { K, redisCmd, redisPipe, getJSON, getHash, newId } from "../lib/store.js";
+import { triggerAnalysis } from "../lib/analyze.js";
 
 // 一次最多三张：期中数学答题卡通常 A4 双面或 A3 单面，三张足够。
 // 不放大是因为 Vercel 函数请求体上限 4.5MB，前端压到 ~70 万字符一张，
@@ -353,6 +354,10 @@ export default async function handler(req, res) {
         student = r.student;
       }
 
+      // 学校由前端必填；这里不硬拦，是为了兼容老师补传老学生、脚本导入等场景。
+      // 只要带了 studentSchool，ensureStudent / 上面的 sid 分支就会把它落到学生档案里，
+      // 将来 AI 按学校分组时按这个字段归卷子。
+
       // 考试必选：建班时已经预置了「第一次月考 / 期中考试 / 第二次月考 / 期末考试」四场，
       // 家长选一场就行，不需要老师先建卷子。"未指定"不收 ——
       // 那种答卷按考试筛永远出不来，"这场谁没交"会把交了的人算成没交。
@@ -443,8 +448,14 @@ export default async function handler(req, res) {
 
       await redisPipe(pipe);
 
+      // 传完就自动分析，不等它跑完 —— AI 读一张图要 20~30 秒，
+      // 让家长对着转圈等太久会以为传失败了。分析状态落在 analysis:<id>，
+      // 后台列表能看到 pending/running/done/error，失败随时手动重跑。
+      // 注意：分析失败绝不能影响这次上传已经成功的事实。
+      if (exam) triggerAnalysis(id);
+
       // 把 sid 回给前端，这台设备下次直接用 sid 认人，不必再按名字匹配
-      return res.status(200).json({ ok: true, id, sid, imageCount: images.length, examName: meta.examName, studentName: meta.studentName });
+      return res.status(200).json({ ok: true, id, sid, imageCount: images.length, examName: meta.examName, studentName: meta.studentName, analyzing: !!exam });
     }
 
     // ══════════ 改挂考试 ══════════
@@ -490,7 +501,11 @@ export default async function handler(req, res) {
       if (exam) pipe.push(["ZADD", K.examSheets(exam.id), String(meta.createdAt || Date.now()), id]);
       await redisPipe(pipe);
 
-      return res.status(200).json({ ok: true, examId: next.examId, examName: next.examName });
+      // 补挂到某场考试，就等于这份答题卡第一次有了卷子结构。
+      // 跟上传走同一套分析，老师不用再到别处点一次。
+      if (exam) triggerAnalysis(id);
+
+      return res.status(200).json({ ok: true, examId: next.examId, examName: next.examName, analyzing: !!exam });
     }
 
     // ══════════ 删除 ══════════
@@ -509,6 +524,8 @@ export default async function handler(req, res) {
       ];
       if (meta.examId) cmds.push(["ZREM", K.examSheets(meta.examId), id]);
       (meta.images || []).forEach((im) => cmds.push(["DEL", K.sheetImg(id, im.n)]));
+      // 分析结果跟着原件走。留着孤儿结果没用，还会让重新上传的同名卷子读到旧数据。
+      cmds.push(["DEL", K.analysis(id)]);
 
       await redisPipe(cmds);
       return res.status(200).json({ ok: true });
