@@ -577,7 +577,7 @@ export default function SheetInbox({ password }) {
                         onChange={(e) => attach(s, e.target.value)}
                         style={{ flex: 1, minWidth: 0, padding: "7px 8px", fontSize: 12, fontFamily: "inherit", color: C.dark, background: C.soft, border: "1px solid " + C.line, borderRadius: 8, outline: "none" }}
                       >
-                        <option value="">未指定（不挂考试）</option>
+                        <option value="">请选择考试</option>
                         {exams.map((ex) => (
                           <option key={ex.id} value={ex.id}>
                             {ex.name}

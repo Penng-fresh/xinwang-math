@@ -35,6 +35,10 @@ import {
 import { guardTeacher } from "../lib/auth.js";
 import { parseNames, dedupeName } from "../lib/names.js";
 
+// 一个学期一般就这四次。建班时预置，家长上传必须选一场 ——
+// 没有"未指定"这个选项，否则按考试统计时永远有一批孤儿答卷。
+const EXAM_SLOTS = ["第一次月考", "期中考试", "第二次月考", "期末考试"];
+
 // ── 学生读写 ────────────────────────────────────────────
 
 function blankStudent({ sid, name, displayName, school, grade, gid }) {
@@ -229,12 +233,39 @@ export default async function handler(req, res) {
           term: String(body.term || "").trim(),
           createdAt: new Date().toISOString()
         };
-        await redisPipe([
+        // 一个学期固定四次：建班时就把这四场建好，家长上传时必选其中一场。
+        // 不要求老师先填卷子结构 —— 现在只是"这场月考的答题卡往哪放"，
+        // 卷子结构等真要做逐题分析时再补，不能让收集卡在备课进度上。
+        // 用 slot:true 标记：家长看得见、能传，但分析页知道它还没有卷子结构。
+        const now = Date.now();
+        const cmds = [
           ["SET", K.group(gid), JSON.stringify(group)],
-          ["ZADD", K.groupIdx(), String(Date.now()), gid],
+          ["ZADD", K.groupIdx(), String(now), gid],
           ["ZADD", K.schools(), "0", school]
-        ]);
-        return res.status(200).json({ ok: true, group });
+        ];
+        EXAM_SLOTS.forEach((name, i) => {
+          const examId = newId();
+          const at = now + i; // 排序稳定：第一次月考在前，期末在后
+          cmds.push(
+            ["SET", K.exam(examId), JSON.stringify({
+              id: examId,
+              gid,
+              name,
+              date: "",
+              school: group.school,
+              grade: group.grade,
+              status: "draft",
+              slot: true,
+              paper: { title: "", totalScore: 0, sections: [] },
+              createdAt: at,
+              updatedAt: at
+            })],
+            ["ZADD", K.examIdx(), String(at), examId],
+            ["ZADD", K.groupExams(gid), String(at), examId]
+          );
+        });
+        await redisPipe(cmds);
+        return res.status(200).json({ ok: true, group, examSlots: EXAM_SLOTS });
       }
 
       // —— 改分组信息 ——

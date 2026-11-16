@@ -324,16 +324,18 @@ export default async function handler(req, res) {
         student = r.student;
       }
 
-      // 考试是可选的：老师还没建考试的时候，家长照样能传，
-      // 先按「未指定考试」收着，等卷子结构有了再挂上去，不阻塞收集。
-      let exam = null;
+      // 考试必选：建班时已经预置了「第一次月考 / 期中考试 / 第二次月考 / 期末考试」四场，
+      // 家长选一场就行，不需要老师先建卷子。"未指定"不收 ——
+      // 那种答卷按考试筛永远出不来，"这场谁没交"会把交了的人算成没交。
       const examId = String(body.examId || "");
-      if (examId) {
-        exam = await getJSON(K.exam(examId));
-        if (!exam) return res.status(404).json({ error: "这场考试不存在，请刷新页面重选" });
-        if (exam.status !== "open") return res.status(409).json({ error: "这场考试已经停止上传了" });
-        if (exam.gid !== gid) return res.status(400).json({ error: "这场考试不属于这个班级" });
+      if (!examId) {
+        return res.status(400).json({ error: "请先选这次是哪场考试（第一次月考 / 期中考试 / 第二次月考 / 期末考试）" });
       }
+      const exam = await getJSON(K.exam(examId));
+      if (!exam) return res.status(404).json({ error: "这场考试不存在，请刷新页面重选" });
+      if (exam.gid !== gid) return res.status(400).json({ error: "这场考试不属于这个班级" });
+      // slot 是预置的收集场次，卷子结构还没填，不算"未开放"
+      if (!exam.slot && exam.status !== "open") return res.status(409).json({ error: "这场考试已经停止上传了" });
 
       const list = Array.isArray(body.images) ? body.images : [];
       if (list.length === 0) return res.status(400).json({ error: "还没有选答题卡照片" });

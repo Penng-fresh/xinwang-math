@@ -10,7 +10,7 @@
 // 确认满分合计对得上，才点「开放」。这跟"确定能用才告诉家长"是一个道理。
 
 import { guardTeacher } from "../lib/auth.js";
-import { K, ns, redisPipe, redisCmd, getJSON, newId } from "../lib/store.js";
+import { K, redisPipe, redisCmd, getJSON, newId } from "../lib/store.js";
 
 const LEVELS = ["base", "mid", "hard"];
 const STATUSES = ["draft", "open", "closed"];
@@ -20,7 +20,8 @@ const STATUSES = ["draft", "open", "closed"];
 const MAX_SECTIONS = 40;
 
 function groupExamsKey(gid) {
-  return ns() + "group:" + gid + ":exams";
+  // 跟建班时预置四次考试用的是同一个键，别在这里另写一份字符串
+  return K.groupExams(gid);
 }
 
 // ── 卷子结构校验 ────────────────────────────────────────
@@ -137,9 +138,11 @@ export default async function handler(req, res) {
         if (!gid) return res.status(400).json({ error: "缺少分组 id" });
         const ids = (await redisCmd(["ZREVRANGE", groupExamsKey(gid), "0", "-1"])) || [];
         const exams = await loadMany(ids);
+        // slot = 建班时预置的四次考试占位（还没填卷子结构）。
+        // 家长要能看到、能选、能传，所以这里不能只认 status=open。
         return res.status(200).json({
           ok: true,
-          exams: exams.filter((e) => e.status === "open").map(publicView),
+          exams: exams.filter((e) => e.status === "open" || e.slot === true).map(publicView),
         });
       }
 

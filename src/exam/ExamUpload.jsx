@@ -6,10 +6,11 @@
 // 所以先把原件收下来，分析能力后补。
 //
 // 几个刻意的选择：
-//   1) 名字不让手打。手打会出现同音字、小名、错字，而 sid 是后面所有分析
-//      的唯一挂钩，错一次就永久错。所以走「学校 → 班级 → 名单里点一个」。
-//   2) 考试可以不选。老师还没建考试时家长照样能传，记成「未指定考试」，
-//      等卷子结构有了再挂上去，不让流程堵在这一步。
+//   1) 名字手填，系统按「班级 + 姓名」认领。不预导名单有两层考虑：
+//      老师不用每次接新班录 60 个名字；家长也看不到全班其他孩子的姓名。
+//   2) 考试必选，而且只有建班时预置的四场：第一次月考、期中、第二次月考、期末。
+//      不设「未指定」—— 那种答卷按考试筛永远出不来，"这场谁没交"会冤枉人。
+//      也不替家长默认勾第一场：默默算成月考比不填更难发现。
 //   3) 照片压到 ~50 万字符一张（2000px 长边、约 170dpi）。答题卡上的字
 //      和红笔批改都要看得清，不能像作业检查那样压到 900px。
 //   4) 记一台设备上次选的学生。一个家长通常只管一个孩子，
@@ -283,7 +284,9 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
         if (!alive) return;
         const openExams = Array.isArray(d2.exams) ? d2.exams : [];
         setExams(openExams);
-        setExamId((cur) => (cur && openExams.some((e) => e.id === cur) ? cur : openExams[0]?.id || ""));
+        // 必选，不替家长默认勾第一场。默认勾上等于悄悄把月考算成期中，
+        // 而且家长不会发现 —— 选错一场比没选更糟。
+        setExamId((cur) => (cur && openExams.some((e) => e.id === cur) ? cur : ""));
       } catch (_) {
         if (!alive) return;
         setExams([]);
@@ -372,6 +375,7 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
     setErr("");
     if (!gid) return setErr("先选学校");
     if (!name.trim()) return setErr("先填孩子的姓名");
+    if (!examId) return setErr("先选这次是哪场考试");
     if (shots.length === 0) return setErr("还没选答题卡");
     setBusy("正在上传…");
     try {
@@ -552,14 +556,20 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
             )}
           </div>
 
-          {exams.length > 1 && (
-            <Sel label="哪一场考试" value={examId} onChange={(e) => setExamId(e.target.value)}>
+          {gid && (
+            <Sel label="哪一场考试（必选）" value={examId} onChange={(e) => setExamId(e.target.value)}>
+              <option value="">请选择考试</option>
               {exams.map((e) => (
                 <option key={e.id} value={e.id}>
                   {e.name + (e.date ? "（" + e.date + "）" : "")}
                 </option>
               ))}
             </Sel>
+          )}
+          {gid && exams.length === 0 && (
+            <div style={{ fontSize: 11.5, color: C.danger, marginBottom: 12, lineHeight: 1.8 }}>
+              这个班还没有考试可选。请联系彭老师先建班，或刷新页面重试。
+            </div>
           )}
 
           {mine && mine.count > 0 && (
@@ -682,17 +692,17 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
 
           <button
             onClick={submit}
-            disabled={!!busy || shots.length === 0 || !name.trim()}
+            disabled={!!busy || shots.length === 0 || !name.trim() || !examId}
             style={{
               width: "100%",
-              background: shots.length === 0 || !name.trim() ? "#d8ccb4" : C.dark,
-              color: shots.length === 0 || !name.trim() ? "#8a7a5a" : C.cream,
+              background: shots.length === 0 || !name.trim() || !examId ? "#d8ccb4" : C.dark,
+              color: shots.length === 0 || !name.trim() || !examId ? "#8a7a5a" : C.cream,
               border: "none",
               borderRadius: 12,
               padding: "15px 0",
               fontSize: 15,
               fontWeight: 700,
-              cursor: shots.length === 0 || !name.trim() || busy ? "not-allowed" : "pointer",
+              cursor: shots.length === 0 || !name.trim() || !examId || busy ? "not-allowed" : "pointer",
               fontFamily: "inherit"
             }}
           >
