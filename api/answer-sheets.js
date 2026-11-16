@@ -21,6 +21,7 @@
 //   GET  ?view=img&id&n&password=  老师端：取第 n 张图片的 base64
 //   GET  ?view=mine&sid=       家长端：这个学生已经传了几份
 //   DELETE { id, password }    老师端：删除一份
+//   PATCH  { id, examId, password }  老师端：把这改挂到某场考试（examId 为空 = 取消挂靠）
 
 import { guardTeacher } from "../lib/auth.js";
 import { K, redisCmd, redisPipe, getJSON, getHash, newId } from "../lib/store.js";
@@ -412,6 +413,53 @@ export default async function handler(req, res) {
 
       // 把 sid 回给前端，这台设备下次直接用 sid 认人，不必再按名字匹配
       return res.status(200).json({ ok: true, id, sid, imageCount: images.length, examName: meta.examName, studentName: meta.studentName });
+    }
+
+    // ══════════ 改挂考试 ══════════
+    //
+    // 家长上传时考试是可选的（老师还没建考试时不能卡住收集）。但"可选"要能后补：
+    // 没挂考试的那几份，按考试筛选时永远不出现，"这场谁没交"就会冤枉已经交了的人。
+    // 这里只改归属，不动图片字节。
+    if (req.method === "PATCH") {
+      let body = req.body;
+      if (typeof body === "string") {
+        try {
+          body = JSON.parse(body);
+        } catch (_) {
+          return res.status(400).json({ error: "请求格式不对" });
+        }
+      }
+      body = body || {};
+      if (!guardTeacher(req, res, body.password)) return;
+
+      const id = String(body.id || "");
+      const meta = await getJSON(K.sheet(id));
+      if (!meta) return res.status(404).json({ error: "找不到这份答题卡" });
+
+      const want = String(body.examId || "");
+      let exam = null;
+      if (want) {
+        exam = await getJSON(K.exam(want));
+        if (!exam) return res.status(404).json({ error: "这场考试不存在" });
+        // 挂错班会把成绩张冠李戴，且在看板上完全看不出来，必须挡
+        if (exam.gid !== meta.gid) return res.status(400).json({ error: "这场考试不属于这份答题卡的班级" });
+      }
+
+      if ((meta.examId || "") === want) return res.status(200).json({ ok: true, unchanged: true });
+
+      const next = {
+        ...meta,
+        examId: exam ? exam.id : "",
+        examName: exam ? exam.name : "",
+        examDate: exam ? exam.date : ""
+      };
+
+      const pipe = [["SET", K.sheet(id), JSON.stringify(next)]];
+      if (meta.examId) pipe.push(["ZREM", K.examSheets(meta.examId), id]);
+      if (exam) pipe.push(["ZADD", K.examSheets(exam.id), String(meta.createdAt || Date.now()), id]);
+      await redisPipe(pipe);
+
+      return res.status(200).json({ ok: true, examId: next.examId, examName: next.examName });
     }
 
     // ══════════ 删除 ══════════

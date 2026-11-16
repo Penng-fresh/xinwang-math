@@ -279,6 +279,23 @@ export default function SheetInbox({ password }) {
     }
   };
 
+  // 改挂考试：家长传的时候没选考试，这里补上，否则按考试筛永远看不到这一份
+  const attach = async (s, nextExamId) => {
+    try {
+      const r = await fetch("/api/answer-sheets", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: s.id, examId: nextExamId, password })
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d?.error || "改挂失败");
+      // 保持当前筛选条件刷新：挪走的就会从当前视图消失，这是对的
+      await load(gid, mode);
+    } catch (err2) {
+      alert("改挂失败：" + (err2.message || "网络问题"));
+    }
+  };
+
   // 分组名一般已经写了年级（初一秋季班），再把 grade 拼上去会出现「初一 初一秋季班」
   const classLabel = (s) => [s.school, s.groupName].filter(Boolean).join(" ");
 
@@ -552,6 +569,23 @@ export default function SheetInbox({ password }) {
 
               {expanded && (
                 <div style={{ padding: "0 14px 14px", borderTop: "1px solid " + C.line }}>
+                  {gid && exams.length > 0 && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 12, color: C.muted }}>
+                      <span style={{ flexShrink: 0 }}>这场属于</span>
+                      <select
+                        value={s.examId || ""}
+                        onChange={(e) => attach(s, e.target.value)}
+                        style={{ flex: 1, minWidth: 0, padding: "7px 8px", fontSize: 12, fontFamily: "inherit", color: C.dark, background: C.soft, border: "1px solid " + C.line, borderRadius: 8, outline: "none" }}
+                      >
+                        <option value="">未指定（不挂考试）</option>
+                        {exams.map((ex) => (
+                          <option key={ex.id} value={ex.id}>
+                            {ex.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <SheetImages sheet={s} data={mine} busy={imgBusy === s.id} onRemove={(e) => remove(s, e)} />
                 </div>
               )}
