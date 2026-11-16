@@ -410,7 +410,7 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
     setErr("");
     if (!gid) return setErr("先选班级");
     if (!name.trim()) return setErr("先填孩子的姓名");
-    if (!studentSchool.trim()) return setErr("先填孩子读哪所学校（同一所学校的卷子能共用一份评分标准）");
+    if (!studentSchool.trim()) return setErr("先填孩子读哪所学校");
     if (!examId) return setErr("先选这次是哪场考试");
     if (shots.length === 0) return setErr("还没选答题卡");
     if (String(score).trim() && !/^\d{1,3}(\.\d)?$/.test(String(score).trim())) {
@@ -644,7 +644,7 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
               ))}
             </datalist>
             <div style={{ fontSize: 11.5, color: C.dim, marginTop: 7, lineHeight: 1.8 }}>
-              同一所学校用同一份卷子，填了学校以后分析卷面时能共用一套评分标准，不用每份卷子重新来。这台手机填过的学校会自动提示。
+              填孩子现在读的学校就行，这台手机填过的会自动提示，点一下就好。
             </div>
           </div>
 
