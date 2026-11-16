@@ -32,7 +32,14 @@ const WHO_KEY = "xw_sheet_who";
 // 单张图 base64 字符数上限。Vercel 函数请求体 4.5MB，三张 70 万字符约 2.1MB，
 // 留足余量；同时 70 万字符（≈52 万字节）的 JPEG 存一份也不至于太贵。
 const BUDGET = 700000;
-const MAX_SHOTS = 3;
+// 一份答题卡六到八页是常态，一页一张才看得清，所以给到 9。
+const MAX_SHOTS = 9;
+// 一次请求能装的总量。服务端上限 360 万字符，这里留点余量；
+// 装不下就让家长先传这些，再点一次传剩下的（服务端本来就允许同一学生多次提交）。
+const TOTAL_BUDGET = 3200000;
+// 整份拼成一张的长图，一页只占几百像素，体积主要浪费在宽度上，
+// 所以单独给一个更高的额度，不然会被压到更看不清。
+const STRIP_BUDGET = 1400000;
 
 // 智学网 App「分享 → 微信」出来的那份 PDF，就是孩子答题卡的扫描件：
 // 正、清晰、每块的红笔得分都在上面。它比家长举着手机拍强得多，
@@ -91,25 +98,40 @@ async function encodeAt(img, maxSide, quality) {
 
 // 一档档往下试，直到塞进预算。每档都是重新编码（而不是把已经压过的再压一遍），
 // 避免二次压缩把字压糊。
+//
+// 多页拼成一张的长图要区别对待：按长边 2000 缩的话，八页并排每页只剩 250 像素，
+// 手写步骤直接糊成一团。这类图源头就已经不高清，能保住原尺寸就保住。
 async function compressSheet(file) {
   const img = await readImage(file);
-  const steps = [
-    [2000, 0.78],
-    [1800, 0.76],
-    [1800, 0.68],
-    [1600, 0.68],
-    [1500, 0.62],
-    [1300, 0.6]
-  ];
+  const strip = img.width / img.height > 2.2;
+  const budget = strip ? STRIP_BUDGET : BUDGET;
+
+  const steps = strip
+    ? [
+        [4000, 0.82],
+        [4000, 0.74],
+        [3200, 0.7],
+        [2600, 0.64],
+        [2200, 0.6]
+      ]
+    : [
+        [2000, 0.78],
+        [1800, 0.76],
+        [1800, 0.68],
+        [1600, 0.68],
+        [1500, 0.62],
+        [1300, 0.6]
+      ];
+
   let last = null;
   for (let i = 0; i < steps.length; i++) {
     last = await encodeAt(img, steps[i][0], steps[i][1]);
-    if (last.data.length <= BUDGET) return last;
+    if (last.data.length <= budget) break;
   }
-  if (!last || last.data.length > BUDGET * 1.7) {
-    throw new Error("这张照片太大，压不到能上传的尺寸。换个角度重拍一次（别用截图，截图反而更大）");
+  if (!last || last.data.length > budget * 1.7) {
+    throw new Error("这张图片太大，压不到能上传的尺寸。换个角度重拍一次（别用截图，截图往往更大）");
   }
-  return last;
+  return { ...last, srcW: img.width, srcH: img.height, strip };
 }
 
 // PDF 不压缩，原样转 base64。能不能传得上去，取决于原文件多大，
@@ -293,25 +315,36 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
     const arr = Array.from(files || []);
     if (arr.length === 0) return;
     setErr("");
-    const room = MAX_SHOTS - shots.length;
-    if (room <= 0) {
-      setErr(`最多传 ${MAX_SHOTS} 份。答题卡有几页就传几页。`);
+    if (shots.length >= MAX_SHOTS) {
+      setErr(`最多 ${MAX_SHOTS} 份。答题卡有几页就传几页，但一页一张。`);
       return;
     }
-    const take = arr.slice(0, room);
+    let used = shots.reduce((n, s) => n + s.data.length, 0);
     const next = [];
+    let skipped = 0;
     try {
-      for (let i = 0; i < take.length; i++) {
-        const f = take[i];
-        setBusy(`正在处理第 ${i + 1} 份（共 ${take.length} 份）…`);
-        if (String(f.type || "") === "application/pdf" || /\.pdf$/i.test(f.name || "")) {
-          next.push(await readPdf(f));
-        } else {
-          const im = await compressSheet(f);
-          next.push({ ...im, kind: "image" });
+      for (let i = 0; i < arr.length; i++) {
+        if (shots.length + next.length >= MAX_SHOTS) {
+          skipped += arr.length - i;
+          break;
         }
+        const f = arr[i];
+        setBusy(`正在处理第 ${i + 1} 份（共 ${arr.length} 份）…`);
+        const item =
+          String(f.type || "") === "application/pdf" || /\.pdf$/i.test(f.name || "")
+            ? await readPdf(f)
+            : { ...(await compressSheet(f)), kind: "image" };
+        if (used + item.data.length > TOTAL_BUDGET) {
+          skipped += arr.length - i;
+          break;
+        }
+        used += item.data.length;
+        next.push(item);
       }
-      setShots((cur) => [...cur, ...next].slice(0, MAX_SHOTS));
+      setShots((cur) => [...cur, ...next]);
+      if (skipped > 0) {
+        setErr(`一次装不下 ${skipped} 份。先把这些传上去，传完再点一次传剩下的，都会挂到同一个孩子名下。`);
+      }
     } catch (e) {
       setErr(e.message || "文件处理失败");
     } finally {
@@ -407,8 +440,8 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
       </div>
       <div style={{ fontSize: 12.5, color: C.dim, lineHeight: 1.9, marginBottom: 16 }}>
         {teacher
-          ? "微信里收到的图片或 PDF 直接拖进来，选好是哪个学生就行。智学网分享出来的 PDF 就是扫描件，最省事。"
-          : "整张平放拍，字和红笔批改要看得清。答题卡有两页就传两页。智学网导出的 PDF 也能传。"}
+          ? "微信里收到的图片或 PDF 直接拖进来，选好是哪个学生就行。"
+          : "一页一张，分开传。别把几页拼成一张，那样字会糊掉。"}
       </div>
 
       {loading && <div style={{ fontSize: 13, color: C.dim, padding: "10px 0" }}>正在读取班级名单…</div>}
@@ -499,7 +532,7 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
               </button>
             </div>
             <div style={{ fontSize: 11.5, color: "#b0a080", marginTop: 7, lineHeight: 1.8 }}>
-              智学网分享的 PDF，先在微信里点「用其他应用打开 → 存储到文件」，再回到这里从「文件」里选。
+              智学网里能点「下载原卷」的，传那份 PDF 比截图清楚；不能下载的就一页一页截图。
             </div>
             <input
               ref={camRef}
@@ -551,7 +584,9 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
                     >
                       ✕
                     </button>
-                    <div style={{ fontSize: 10.5, color: C.dim, textAlign: "center", marginTop: 3 }}>{Math.round(s.bytes / 1024)} KB</div>
+                    <div style={{ fontSize: 10.5, color: s.strip ? "#b04a30" : C.dim, textAlign: "center", marginTop: 3 }}>
+                      {s.strip ? "多页拼图" : Math.round(s.bytes / 1024) + " KB"}
+                    </div>
                   </div>
                 ))}
                 {shots.length < MAX_SHOTS && (
@@ -559,6 +594,18 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
                     还能加{MAX_SHOTS - shots.length}份
                   </div>
                 )}
+              </div>
+            )}
+
+            {shots.some((s) => s.strip) && (
+              <div style={{ background: "#fdf3dc", border: "1px solid #e8c870", borderRadius: 10, padding: "10px 14px", marginTop: 10, fontSize: 12.5, color: "#7a5a20", lineHeight: 1.9 }}>
+                你选的这张是把好几页拼在一起的
+                {(() => {
+                  const s = shots.find((x) => x.strip);
+                  return s?.srcW ? `（原图宽 ${s.srcW} 像素）` : "";
+                })()}
+                。按八页算，每页只剩两三百像素，手写的步骤会糊成一团，分析不出东西。
+                <b>建议在智学网上点开原卷，双指放大，一页一页截图。</b>
               </div>
             )}
           </div>

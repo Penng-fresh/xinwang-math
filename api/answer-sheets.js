@@ -27,7 +27,9 @@ import { K, redisCmd, redisPipe, getJSON, newId } from "../lib/store.js";
 // 一次最多三张：期中数学答题卡通常 A4 双面或 A3 单面，三张足够。
 // 不放大是因为 Vercel 函数请求体上限 4.5MB，前端压到 ~70 万字符一张，
 // 三张约 2.1MB，留出了余量。
-const MAX_IMAGES = 3;
+// 一份答题卡六到八页是常态，一页一张才看得清，所以给到 9。
+// 整份拼成一张的长图也收，但那种图每页只剩两三百像素，前端会当场提示。
+const MAX_IMAGES = 9;
 // 图片走前端压缩，正常落在 70 万字符以内；PDF 不能重编码，只能整份塞，
 // 前端已把上限卡在 2MB 文件（base64 约 280 万字符）。两个上限分开写，
 // 免得一张异常大的图也能顶到 PDF 的额度。
@@ -188,7 +190,7 @@ export default async function handler(req, res) {
 
       const list = Array.isArray(body.images) ? body.images : [];
       if (list.length === 0) return res.status(400).json({ error: "还没有选答题卡照片" });
-      if (list.length > MAX_IMAGES) return res.status(400).json({ error: `一次最多传 ${MAX_IMAGES} 张` });
+      if (list.length > MAX_IMAGES) return res.status(400).json({ error: `一次最多 ${MAX_IMAGES} 份。答题卡页多就分两次传，都会挂到同一个学生名下。` });
 
       let totalChars = 0;
       const images = [];

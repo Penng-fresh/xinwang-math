@@ -82,12 +82,18 @@ export default function ExamParent({ onBack }) {
           </div>
         </Card>
 
-        <Card title="拍的时候注意三件事">
-          <div style={{ marginBottom: 8 }}><strong>1. 整张平放。</strong>别折、别卷、别斜着拍，四个角尽量都进画面。</div>
-          <div style={{ marginBottom: 8 }}><strong>2. 光线足一点。</strong>别背光，手别挡住卷子。</div>
-          <div style={{ marginBottom: 8 }}><strong>3. 老师打的叉、写的分要看得清。</strong>这是最关键的——他错在哪一步，全在这些痕迹里。</div>
-          <div style={{ background: "#f0f7ff", border: "1px solid #b8d8f0", borderRadius: 10, padding: "10px 14px", fontSize: 12.5, color: "#2a5a80", lineHeight: 1.9 }}>
-            如果智学网上能导出那份 <strong>PDF</strong>，传 PDF 比拍照更清楚，系统认得更准。点「相册 / 文件」就能找到它。
+        <Card title="怎么传，我才分析得了">
+          <div style={{ marginBottom: 10 }}>
+            <strong>1. 一页一张，分开传。</strong>答题卡有几页就传几页，一般六到八页。分开传，每页的字才够大。
+          </div>
+          <div style={{ marginBottom: 10, background: "#fdf3dc", border: "1px solid #e8c870", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#7a5a20" }}>
+            <strong>2. 别整份拼成一张。</strong>在手机上把页面缩到最小、一屏截下全部——这种长图每页只剩两三百像素，字糊成一团，我拿到也看不出他错在哪一步。
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <strong>3. 字要清楚。</strong>你眯着眼看不清的，我也看不清。光线足、拍正、四个角都进画面，老师打的叉别挡住。
+          </div>
+          <div>
+            <strong>4. 能下载原卷就传 PDF。</strong>智学网里如果能看到「下载原卷」这个按钮，存下来直接传，比截图清楚得多。
           </div>
         </Card>
 
