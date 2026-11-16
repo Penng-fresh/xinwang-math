@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f5f0e8">
+<title>答题卡上传 · 信望数学</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    background: #f5f0e8;
+    color: #2a2218;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    line-height: 1.7;
+  }
+  .wrap { max-width: 520px; margin: 0 auto; padding: 22px 14px 40px; }
+  .eyebrow { font-size: 11px; letter-spacing: 3px; color: #a08060; }
+  h1 { font-size: 23px; line-height: 1.3; margin: 6px 0 8px; letter-spacing: 1px; }
+  .sub { font-size: 13px; color: #8a7a5a; margin: 0 0 18px; }
+  .card {
+    background: #fff;
+    border: 1px solid #e8d0a0;
+    border-radius: 14px;
+    padding: 16px;
+  }
+  label { display: block; font-size: 12px; color: #a08060; letter-spacing: 1px; margin: 14px 0 6px; }
+  label:first-child { margin-top: 0; }
+  input, select, textarea {
+    width: 100%;
+    border: 1px solid #e8d0a0;
+    border-radius: 10px;
+    background: #fff;
+    color: #2a2218;
+    padding: 12px;
+    font: inherit;
+    font-size: 16px;
+    outline: none;
+  }
+  select { appearance: none; -webkit-appearance: none; padding-right: 34px; background-image: linear-gradient(45deg, transparent 50%, #a08060 50%), linear-gradient(135deg, #a08060 50%, transparent 50%); background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+  input:focus, select:focus, textarea:focus { border-color: #e8a030; }
+  textarea { resize: vertical; min-height: 60px; }
+  .hint { font-size: 11.5px; color: #a08060; margin-top: 6px; }
+  .files-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 18px; }
+  .files-head strong { font-size: 12.5px; color: #5a4a30; }
+  .file-btns { display: flex; gap: 6px; }
+  .mini {
+    border: 1px solid #e8d0a0;
+    background: #faf6ee;
+    color: #5a4a30;
+    border-radius: 9px;
+    padding: 8px 10px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .mini:active { background: #f0e8d8; }
+  .list { margin-top: 10px; }
+  .shot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid #e8d0a0;
+    background: #faf6ee;
+    border-radius: 9px;
+    padding: 8px;
+    margin-top: 8px;
+  }
+  .shot img { width: 46px; height: 46px; object-fit: cover; border-radius: 6px; background: #fff; border: 1px solid #e8d0a0; }
+  .pdfbox { width: 46px; height: 46px; border-radius: 6px; background: #fde8e8; color: #b04a30; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; border: 1px solid #e8b0b0; }
+  .shot-name { flex: 1; min-width: 0; font-size: 12px; color: #5a4a30; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .del { border: 0; background: transparent; color: #c03030; font: inherit; font-size: 12px; padding: 6px; cursor: pointer; }
+  .submit {
+    width: 100%;
+    margin-top: 20px;
+    border: 0;
+    border-radius: 11px;
+    background: #2a2218;
+    color: #fff8ee;
+    padding: 15px;
+    font: inherit;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    cursor: pointer;
+  }
+  .submit:disabled { opacity: .45; cursor: default; }
+  .err {
+    display: none;
+    margin-top: 12px;
+    border: 1px solid #e8a0a0;
+    background: #fde8e8;
+    color: #a03030;
+    border-radius: 9px;
+    padding: 10px 12px;
+    font-size: 12.5px;
+  }
+  .notice {
+    margin-top: 16px;
+    border: 1px dashed #c8b898;
+    background: #faf6ee;
+    border-radius: 12px;
+    padding: 13px 14px;
+    font-size: 12px;
+    color: #7a6a4a;
+    line-height: 1.9;
+  }
+  .notice b { color: #5a4a30; }
+  .success { display: none; background: #fff; border: 1px solid #e8d0a0; border-radius: 14px; padding: 28px 18px; text-align: center; }
+  .tick { width: 54px; height: 54px; line-height: 54px; border-radius: 27px; background: #e8f5e0; color: #3a8a3a; font-size: 27px; margin: 0 auto 14px; }
+  .success h2 { margin: 0 0 8px; font-size: 19px; }
+  .success p { margin: 0; font-size: 13.5px; color: #5a4a30; }
+  .again { margin-top: 18px; border: 1px solid #e8d0a0; background: transparent; color: #7a6a4a; border-radius: 20px; padding: 9px 22px; font: inherit; font-size: 13px; cursor: pointer; }
+  .foot { text-align: center; font-size: 10.5px; color: #b0a080; margin-top: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="formWrap">
+  <div class="eyebrow">信望数学</div>
+  <h1>答题卡上传</h1>
+  <p class="sub">智学网原卷、截图、纸质卷拍照都可以。一页一张，别把几页拼成一张。</p>
+
+  <div class="card">
+    <label for="gid">班级</label>
+    <select id="gid"></select>
+
+    <label for="name">孩子姓名</label>
+    <input id="name" autocomplete="off" placeholder="填孩子名字">
+
+    <label for="school">孩子学校（必填）</label>
+    <input id="school" autocomplete="off" list="schoolList" placeholder="填现在读的学校">
+    <datalist id="schoolList"></datalist>
+
+    <label for="exam">这次是哪场考试</label>
+    <select id="exam"><option value="">请选择考试</option></select>
+
+    <label for="score">孩子知道的总分（可不填）</label>
+    <input id="score" type="number" inputmode="decimal" min="0" max="200" step="0.5" placeholder="比如 108，不知道就空着">
+
+    <div class="files-head">
+      <strong>答题卡</strong>
+      <div class="file-btns">
+        <button class="mini" type="button" id="pickBtn">选择图片 / PDF</button>
+        <button class="mini" type="button" id="camBtn">拍照</button>
+      </div>
+    </div>
+    <input id="pick" type="file" accept="image/*,application/pdf" multiple hidden>
+    <input id="cam" type="file" accept="image/*" capture="environment" hidden>
+    <div class="list" id="list"></div>
+    <div class="hint" id="fileHint">最多 9 份。传不完可以分两次传，都会记到同一个孩子名下。</div>
+
+    <label for="note">留言（可不填）</label>
+    <textarea id="note" rows="2" placeholder="有特殊情况可以写一句"></textarea>
+
+    <button class="submit" type="button" id="submitBtn">上传答题卡</button>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="notice">
+    <b>怎么传更清楚</b><br>
+    1. 智学网能下载原卷的，优先传 PDF 或原图。<br>
+    2. 只能截图的，一页一张，不要拼成长图。<br>
+    3. 只有纸质答题卡的，拍正、拍清楚，红笔分数要能看见。
+  </div>
+  <div class="foot">信望数学 · 彭老师</div>
+</div>
+
+<div class="wrap" id="doneWrap" style="display:none">
+  <div class="success">
+    <div class="tick">✓</div>
+    <h2>收到了</h2>
+    <p id="doneText"></p>
+    <button class="again" type="button" id="againBtn">还有一页要传</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  var MAX_SHOTS = 9;
+  var BUDGET = 700000;
+  var STRIP_BUDGET = 1400000;
+  var TOTAL_BUDGET = 3200000;
+  var PDF_MAX_BYTES = 2 * 1024 * 1024;
+  var PEOPLE_KEY = "xw_sheet_people";
+
+  var $ = function (id) { return document.getElementById(id); };
+  var gidEl = $("gid"), nameEl = $("name"), schoolEl = $("school"), examEl = $("exam");
+  var scoreEl = $("score"), noteEl = $("note"), listEl = $("list"), errEl = $("err");
+  var pickEl = $("pick"), camEl = $("cam"), submitEl = $("submitBtn"), hintEl = $("fileHint");
+  var formWrap = $("formWrap"), doneWrap = $("doneWrap"), doneText = $("doneText");
+
+  var groups = [];
+  var shots = [];
+  var busy = false;
+  var lastSid = "";
+
+  function showErr(msg) {
+    errEl.textContent = msg || "";
+    errEl.style.display = msg ? "block" : "none";
+    if (msg) errEl.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+
+  function loadLast() {
+    try {
+      var list = JSON.parse(localStorage.getItem(PEOPLE_KEY) || "[]");
+      return Array.isArray(list) && list.length ? list[0] : null;
+    } catch (e) { return null; }
+  }
+
+  function loadPeople() {
+    try {
+      var list = JSON.parse(localStorage.getItem(PEOPLE_KEY) || "[]");
+      return Array.isArray(list) ? list : [];
+    } catch (e) { return []; }
+  }
+
+  function savePerson(p) {
+    try {
+      var list = loadPeople().filter(function (x) { return !(x.gid === p.gid && x.name === p.name); });
+      list.unshift({ gid: p.gid, name: p.name, sid: p.sid || "", school: p.school || "", at: Date.now() });
+      localStorage.setItem(PEOPLE_KEY, JSON.stringify(list.slice(0, 10)));
+    } catch (e) {}
+  }
+
+  function fillSchools() {
+    var seen = {};
+    var dl = $("schoolList");
+    dl.textContent = "";
+    loadPeople().forEach(function (p) {
+      if (p.school && !seen[p.school]) {
+        seen[p.school] = 1;
+        var o = document.createElement("option");
+        o.value = p.school;
+        dl.appendChild(o);
+      }
+    });
+  }
+
+  function loadCatalog() {
+    fetch("/api/roster?view=catalog", { cache: "no-store" })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (x) {
+        if (!x.ok) throw new Error(x.d && x.d.error || "班级读取失败");
+        groups = [];
+        (x.d.schools || []).forEach(function (s) {
+          (s.groups || []).forEach(function (g) { groups.push(g); });
+        });
+        if (!groups.length) throw new Error("老师还没建班，先联系老师");
+        gidEl.textContent = "";
+        groups.forEach(function (g) {
+          var o = document.createElement("option");
+          o.value = g.gid;
+          o.textContent = (g.grade ? g.grade + " · " : "") + g.name;
+          gidEl.appendChild(o);
+        });
+        var last = loadLast();
+        var pick = last && groups.some(function (g) { return g.gid === last.gid; }) ? last.gid : groups[0].gid;
+        gidEl.value = pick;
+        if (last) {
+          if (last.gid === pick) {
+            nameEl.value = last.name || "";
+            schoolEl.value = last.school || "";
+            lastSid = last.sid || "";
+          }
+        }
+        fillSchools();
+        loadExams(pick);
+      })
+      .catch(function (e) { showErr(e.message || "页面读取失败，刷新再试"); });
+  }
+
+  function loadExams(gid) {
+    examEl.textContent = "";
+    var o0 = document.createElement("option");
+    o0.value = "";
+    o0.textContent = "请选择考试";
+    examEl.appendChild(o0);
+    if (!gid) return;
+    fetch("/api/exams?view=open&gid=" + encodeURIComponent(gid), { cache: "no-store" })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (x) {
+        if (!x.ok) throw new Error(x.d && x.d.error || "考试读取失败");
+        (x.d.exams || []).forEach(function (e) {
+          var o = document.createElement("option");
+          o.value = e.id;
+          o.textContent = e.name + (e.date ? " · " + e.date : "");
+          examEl.appendChild(o);
+        });
+      })
+      .catch(function (e) { showErr(e.message || "考试读取失败"); });
+  }
+
+  function renderShots() {
+    listEl.textContent = "";
+    shots.forEach(function (s, i) {
+      var row = document.createElement("div");
+      row.className = "shot";
+      if (s.kind === "pdf") {
+        var box = document.createElement("div");
+        box.className = "pdfbox";
+        box.textContent = "PDF";
+        row.appendChild(box);
+      } else {
+        var img = document.createElement("img");
+        img.src = s.preview;
+        img.alt = "第" + (i + 1) + "页";
+        row.appendChild(img);
+      }
+      var nm = document.createElement("div");
+      nm.className = "shot-name";
+      nm.textContent = s.name || (s.kind === "pdf" ? "答题卡.pdf" : "第 " + (i + 1) + " 页");
+      row.appendChild(nm);
+      var del = document.createElement("button");
+      del.type = "button";
+      del.className = "del";
+      del.textContent = "删除";
+      del.onclick = function () { shots.splice(i, 1); renderShots(); };
+      row.appendChild(del);
+      listEl.appendChild(row);
+    });
+    hintEl.textContent = shots.length
+      ? "已选 " + shots.length + " 份" + (shots.length < MAX_SHOTS ? "，还能加 " + (MAX_SHOTS - shots.length) + " 份" : "，已到上限")
+      : "最多 9 份。传不完可以分两次传，都会记到同一个孩子名下。";
+  }
+
+  function readImage(file) {
+    return new Promise(function (resolve, reject) {
+      if (!file || String(file.type || "").indexOf("image/") !== 0) {
+        reject(new Error("这张不是图片，换一张试试"));
+        return;
+      }
+      var fr = new FileReader();
+      fr.onerror = function () { reject(new Error("这张图片读不出来，换一张试试")); };
+      fr.onload = function (e) {
+        var img = new Image();
+        img.onerror = function () { reject(new Error("这张图片打不开，换一张试试")); };
+        img.onload = function () { resolve(img); };
+        img.src = e.target.result;
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+
+  function encodeAt(img, maxSide, quality) {
+    var w = img.width, h = img.height;
+    if (w > maxSide || h > maxSide) {
+      if (w > h) { h = Math.round(h * maxSide / w); w = maxSide; }
+      else { w = Math.round(w * maxSide / h); h = maxSide; }
+    }
+    var cv = document.createElement("canvas");
+    cv.width = w;
+    cv.height = h;
+    var ctx = cv.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    return new Promise(function (resolve, reject) {
+      cv.toBlob(function (blob) {
+        if (!blob) { reject(new Error("图片压缩失败，换一张试试")); return; }
+        var fr = new FileReader();
+        fr.onerror = function () { reject(new Error("图片压缩后读取失败")); };
+        fr.onload = function (e) {
+          var dataUrl = e.target.result;
+          resolve({
+            data: String(dataUrl).split(",")[1] || "",
+            preview: dataUrl,
+            bytes: blob.size
+          });
+        };
+        fr.readAsDataURL(blob);
+      }, "image/jpeg", quality);
+    });
+  }
+
+  function compressSheet(file) {
+    return readImage(file).then(function (img) {
+      var strip = img.width / img.height > 2.2;
+      var budget = strip ? STRIP_BUDGET : BUDGET;
+      var steps = strip
+        ? [[4000, .82], [4000, .74], [3200, .7], [2600, .64], [2200, .6]]
+        : [[2000, .78], [1800, .76], [1800, .68], [1600, .68], [1500, .62], [1300, .6]];
+      var seq = Promise.resolve(null);
+      steps.forEach(function (st) {
+        seq = seq.then(function (last) {
+          if (last && last.data.length <= budget) return last;
+          return encodeAt(img, st[0], st[1]);
+        });
+      });
+      return seq.then(function (last) {
+        if (!last || last.data.length > budget * 1.7) throw new Error("这张图片太大，压不到能上传的尺寸，换个角度重拍一次");
+        return { kind: "image", data: last.data, preview: last.preview, bytes: last.bytes, name: file.name || "答题卡照片" };
+      });
+    });
+  }
+
+  function readPdf(file) {
+    return new Promise(function (resolve, reject) {
+      if (file.size > PDF_MAX_BYTES) {
+        reject(new Error("这份 PDF 超过 2MB，传不了。请重存一份小的，或者直接拍答题卡。"));
+        return;
+      }
+      var fr = new FileReader();
+      fr.onerror = function () { reject(new Error("这份 PDF 读不出来，换一份试试")); };
+      fr.onload = function (e) {
+        resolve({ kind: "pdf", data: String(e.target.result).split(",")[1] || "", bytes: file.size, name: file.name || "答题卡.pdf" });
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+
+  async function addFiles(files) {
+    var arr = Array.prototype.slice.call(files || []);
+    if (!arr.length) return;
+    showErr("");
+    if (shots.length >= MAX_SHOTS) { showErr("最多 9 份，已经到上限了"); return; }
+    busy = true;
+    submitEl.disabled = true;
+    submitEl.textContent = "正在处理照片…";
+    try {
+      for (var i = 0; i < arr.length; i++) {
+        if (shots.length >= MAX_SHOTS) { showErr("最多 9 份，多的没有加进来"); break; }
+        var f = arr[i];
+        var isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name || "");
+        try {
+          var item = isPdf ? await readPdf(f) : await compressSheet(f);
+          var used = shots.reduce(function (n, x) { return n + x.data.length; }, 0);
+          if (used + item.data.length > TOTAL_BUDGET) {
+            showErr("几张照片加起来太大了，减到两张，或者重新拍一次");
+            break;
+          }
+          shots.push(item);
+          renderShots();
+        } catch (e) {
+          showErr(e.message || "这份文件处理失败，换一份试试");
+        }
+      }
+    } finally {
+      busy = false;
+      submitEl.disabled = false;
+      submitEl.textContent = "上传答题卡";
+    }
+  }
+
+  function validate() {
+    if (!gidEl.value) return "先选班级";
+    if (!nameEl.value.trim()) return "先填孩子姓名";
+    if (!schoolEl.value.trim()) return "先填孩子读哪所学校";
+    if (!examEl.value) return "先选这次是哪场考试";
+    if (!shots.length) return "还没有选答题卡照片";
+    if (scoreEl.value.trim()) {
+      var n = Number(scoreEl.value);
+      if (!isFinite(n) || n < 0 || n > 200) return "分数填 0 到 200 之间的数字";
+    }
+    return "";
+  }
+
+  async function submit() {
+    if (busy) return;
+    var msg = validate();
+    if (msg) { showErr(msg); return; }
+    showErr("");
+    busy = true;
+    submitEl.disabled = true;
+    submitEl.textContent = "正在上传，别关页面…";
+    var payload = {
+      gid: gidEl.value,
+      examId: examEl.value,
+      studentName: nameEl.value.trim(),
+      studentSchool: schoolEl.value.trim(),
+      note: noteEl.value.trim(),
+      source: "parent",
+      images: shots.map(function (s) { return { data: s.data, mediaType: s.kind === "pdf" ? "application/pdf" : "image/jpeg" }; })
+    };
+    try {
+      var r = await fetch("/api/answer-sheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      var d = await r.json().catch(function () { return {}; });
+      if (!r.ok || d.error) throw new Error(d.error || "上传失败");
+      var scoreWanted = !!scoreEl.value.trim();
+      var scoreSaved = false;
+      if (scoreWanted) {
+        try {
+          var sr = await fetch("/api/scores", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ gid: gidEl.value, sid: d.sid, examId: examEl.value, score: Number(scoreEl.value), source: "parent" })
+          });
+          var sd = await sr.json().catch(function () { return {}; });
+          scoreSaved = sr.ok && !!sd.ok;
+        } catch (e) {}
+      }
+      savePerson({ gid: gidEl.value, name: d.studentName || nameEl.value.trim(), sid: d.sid || "", school: schoolEl.value.trim() });
+      lastSid = d.sid || "";
+      doneText.textContent = (d.studentName || nameEl.value.trim()) +
+        (d.examName ? " · " + d.examName : "") + " · " + (d.imageCount || shots.length) + " 份" +
+        (scoreWanted && !scoreSaved ? "（分数没记上，老师会补）" : "");
+      formWrap.style.display = "none";
+      doneWrap.style.display = "block";
+      window.scrollTo(0, 0);
+    } catch (e) {
+      showErr(e.message || "上传失败，检查网络后再点一次");
+    } finally {
+      busy = false;
+      submitEl.disabled = false;
+      submitEl.textContent = "上传答题卡";
+    }
+  }
+
+  gidEl.addEventListener("change", function () {
+    nameEl.value = "";
+    schoolEl.value = "";
+    lastSid = "";
+    loadExams(gidEl.value);
+  });
+  $("pickBtn").addEventListener("click", function () { pickEl.click(); });
+  $("camBtn").addEventListener("click", function () { camEl.click(); });
+  pickEl.addEventListener("change", function (e) { addFiles(e.target.files); pickEl.value = ""; });
+  camEl.addEventListener("change", function (e) { addFiles(e.target.files); camEl.value = ""; });
+  submitEl.addEventListener("click", submit);
+  $("againBtn").addEventListener("click", function () {
+    shots = [];
+    renderShots();
+    noteEl.value = "";
+    scoreEl.value = "";
+    showErr("");
+    doneWrap.style.display = "none";
+    formWrap.style.display = "block";
+    window.scrollTo(0, 0);
+  });
+
+  loadCatalog();
+})();
+</script>
+</body>
+</html>
