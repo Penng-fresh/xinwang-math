@@ -219,10 +219,12 @@ export default async function handler(req, res) {
 
       // —— 新建分组 ——
       if (action === "createGroup") {
+        // 学校改成选填：penng 是校外补习班，一个班里有宝一中、新建路中学等
+        // 好几个学校的学生，分组不能再按学校拆。学校要记在学生身上，
+        // 将来做 AI 卷面分析时，同一所学校用同一份卷子结构。
         const school = String(body.school || "").trim();
         const name = String(body.name || "").trim();
-        if (!school) return res.status(400).json({ error: "请填学校" });
-        if (!name) return res.status(400).json({ error: "请填分组名（例如：初一秋季班）" });
+        if (!name) return res.status(400).json({ error: "请填班级名（例如：周六提高班）" });
 
         const gid = "g" + newId();
         const group = {
@@ -240,9 +242,10 @@ export default async function handler(req, res) {
         const now = Date.now();
         const cmds = [
           ["SET", K.group(gid), JSON.stringify(group)],
-          ["ZADD", K.groupIdx(), String(now), gid],
-          ["ZADD", K.schools(), "0", school]
+          ["ZADD", K.groupIdx(), String(now), gid]
         ];
+        // 学校可不填，别把空串塞进学校列表
+        if (school) cmds.push(["ZADD", K.schools(), "0", school]);
         EXAM_SLOTS.forEach((name, i) => {
           const examId = newId();
           const at = now + i;

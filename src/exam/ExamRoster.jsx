@@ -1,11 +1,14 @@
 // 学生名单管理（教师后台里的一个页签）
 //
-// 为什么要有这一页：后面所有的成绩走势、班级统计，都靠「同一个学生」这件事。
-// 家长手填名字只要错一个字，系统就会把一个人当成两个人，而且你根本不会察觉。
-// 所以名单必须由老师一次性录入，之后每份答卷都挂到名单里的某个人身上。
+// 分组 = 补习班的班（如「周六提高班」），按年级区分，不按学校拆 ——
+// 一个班里宝一中、新建路中学的学生都有。学校是学生的属性，家长上传时手填，
+// 将来上线 AI 卷面分析，靠它把同一所学校的卷子归到一起。
+//
+// 家长端不读这份名单（隐私），而是手填姓名，系统按「班级 + 姓名」认领或新建。
+// 这一页是给老师做班级管理和事后核对用的，不是家长可选的下拉来源。
 //
 // 交互只做三件事，故意做得笨一点：
-//   1. 建分组（学校 + 年级 + 学期）
+//   1. 建分组（年级 + 班名；学校可不填，只是一个备注）
 //   2. 从 Excel 复制一列名字，粘进框里，一键导入
 //   3. 组内微调：改名、移除
 //
@@ -67,7 +70,7 @@ export default function ExamRoster({ password }) {
   const [members, setMembers] = useState([]);
   const [membersLoading, setMembersLoading] = useState(false);
 
-  const [form, setForm] = useState({ name: "", school: "", grade: "初一", term: "2026秋季" });
+  const [form, setForm] = useState({ name: "", school: "", grade: "初一", term: "" });
   const [pasteText, setPasteText] = useState("");
   const [editingSid, setEditingSid] = useState("");
   const [editingName, setEditingName] = useState("");
@@ -147,8 +150,8 @@ export default function ExamRoster({ password }) {
   const createGroup = async () => {
     setMsg("");
     setErr("");
-    if (!form.name.trim()) return setErr("请填分组名");
-    if (!form.school.trim()) return setErr("请填学校");
+    if (!form.name.trim()) return setErr("请填班名");
+    // 学校不再必填：补习班一个班混好几个学校的学生，学校归到学生身上。
     setBusy(true);
     try {
       const d = await post({ action: "createGroup", ...form });
@@ -156,7 +159,7 @@ export default function ExamRoster({ password }) {
       await loadGroups();
       setGid(d.group.gid);
       await loadMembers(d.group.gid);
-      setMsg("分组已建好，接着把学生名字粘进来");
+      setMsg("班级已建好，接着把学生名字粘进来");
     } catch (e) {
       setErr(e.message);
     }
@@ -166,7 +169,7 @@ export default function ExamRoster({ password }) {
   const importNames = async () => {
     setMsg("");
     setErr("");
-    if (!gid) return setErr("先选一个分组");
+    if (!gid) return setErr("先选一个班");
     if (!pasteText.trim()) return setErr("先把名字粘进框里");
     setBusy(true);
     try {
@@ -204,7 +207,7 @@ export default function ExamRoster({ password }) {
   };
 
   const removeStudent = async (sid, name) => {
-    if (!confirm(`把「${name}」从这个分组移除？\n（他的历史成绩不会消失，重新加回来还能接着用）`)) return;
+    if (!confirm(`把「${name}」从这个班移除？\n（他的历史成绩不会消失，重新加回来还能接着用）`)) return;
     setBusy(true);
     setErr("");
     try {
@@ -219,7 +222,7 @@ export default function ExamRoster({ password }) {
 
   const removeGroup = async () => {
     if (!group) return;
-    if (!confirm(`删除分组「${group.name}」？\n（组里还有学生时会删不掉，这是故意的）`)) return;
+    if (!confirm(`删除班级「${group.name}」？\n（班里还有学生时会删不掉，这是故意的）`)) return;
     setBusy(true);
     setErr("");
     try {
@@ -228,7 +231,7 @@ export default function ExamRoster({ password }) {
       setGroup(null);
       setMembers([]);
       await loadGroups();
-      setMsg("分组已删除");
+      setMsg("班级已删除");
     } catch (e) {
       setErr(e.message);
     }
@@ -253,20 +256,12 @@ export default function ExamRoster({ password }) {
 
       {/* ① 新建分组 */}
       <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 16, marginBottom: 12 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 12 }}>① 建一个分组</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 12 }}>① 建一个班</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
-            <div style={S.label}>分组名</div>
-            <input style={S.input} value={form.name} placeholder="如：初一秋季周末班"
+            <div style={S.label}>班名</div>
+            <input style={S.input} value={form.name} placeholder="如：周六提高班"
               onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          </div>
-          <div>
-            <div style={S.label}>学校</div>
-            <input style={S.input} value={form.school} placeholder="如：宝一中" list="xw-schools"
-              onChange={(e) => setForm({ ...form, school: e.target.value })} />
-            <datalist id="xw-schools">
-              {schoolOptions.map((s) => <option key={s} value={s} />)}
-            </datalist>
           </div>
           <div>
             <div style={S.label}>年级</div>
@@ -276,21 +271,28 @@ export default function ExamRoster({ password }) {
               <option value="初三">初三</option>
             </select>
           </div>
-          <div>
-            <div style={S.label}>学期</div>
-            <input style={S.input} value={form.term} onChange={(e) => setForm({ ...form, term: e.target.value })} />
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={S.label}>学校（可不填）</div>
+            <input style={S.input} value={form.school} placeholder="只是给这个班加个备注，不影响家长上传" list="xw-schools"
+              onChange={(e) => setForm({ ...form, school: e.target.value })} />
+            <datalist id="xw-schools">
+              {schoolOptions.map((s) => <option key={s} value={s} />)}
+            </datalist>
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 5, lineHeight: 1.7 }}>
+              孩子读哪所学校由家长上传时自己填，一个班里可以有好几个学校的孩子。
+            </div>
           </div>
         </div>
         <button disabled={busy} onClick={createGroup}
           style={{ ...S.btn(C.dark, "#f0e8d0"), marginTop: 12, opacity: busy ? 0.6 : 1 }}>
-          新建分组
+          新建班级
         </button>
       </div>
 
       {/* ② 选分组 */}
       <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 16, marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>② 选一个分组</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>② 选一个班</div>
           <button onClick={loadGroups} style={{ ...S.btn("transparent", C.muted, "1px solid " + C.border), padding: "5px 12px", fontWeight: 400 }}>
             🔄 刷新
           </button>
@@ -298,7 +300,7 @@ export default function ExamRoster({ password }) {
         {loading ? (
           <div style={{ color: C.muted, fontSize: 13, padding: "10px 0" }}>加载中...</div>
         ) : groups.length === 0 ? (
-          <div style={{ color: C.muted, fontSize: 13, padding: "10px 0" }}>还没有分组，先在上面建一个</div>
+          <div style={{ color: C.muted, fontSize: 13, padding: "10px 0" }}>还没有班，先在上面建一个</div>
         ) : (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {groups.map((g) => (
@@ -310,8 +312,8 @@ export default function ExamRoster({ password }) {
                   border: "1px solid " + (gid === g.gid ? C.dark : C.border),
                   borderRadius: 20, padding: "7px 14px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit"
                 }}>
-                {g.school} · {g.name}
-                <span style={{ opacity: 0.7, marginLeft: 6 }}>{g.count || 0}人</span>
+                {g.school ? g.school + " · " : ""}{g.name}
+                <span style={{ opacity: 0.7, marginLeft: 6 }}>{g.grade ? g.grade + " · " : ""}{g.count || 0}人</span>
               </button>
             ))}
           </div>
@@ -323,14 +325,14 @@ export default function ExamRoster({ password }) {
         <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 16 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>
-              ③ {group ? `${group.school} · ${group.name}` : "名单"}
+              ③ {group ? (group.school ? group.school + " · " : "") + group.name : "名单"}
               <span style={{ fontSize: 12, fontWeight: 400, color: C.muted, marginLeft: 8 }}>
                 {members.length} 人{group && group.grade ? ` · ${group.grade}` : ""}{group && group.term ? ` · ${group.term}` : ""}
               </span>
             </div>
             <button onClick={removeGroup} disabled={busy}
               style={{ ...S.btn(C.dangerBg, C.danger), padding: "5px 12px", fontWeight: 400 }}>
-              删除分组
+              删除班级
             </button>
           </div>
 
@@ -352,7 +354,7 @@ export default function ExamRoster({ password }) {
             <div style={{ color: C.muted, fontSize: 13 }}>加载中...</div>
           ) : members.length === 0 ? (
             <div style={{ textAlign: "center", padding: "24px 10px", color: C.muted, background: C.soft, borderRadius: 10, border: "1px dashed #c8b898", fontSize: 13 }}>
-              这个分组还没有学生，把名字粘进来导入
+              这个班还没有学生，把名字粘进来导入
             </div>
           ) : (
             <div>
@@ -379,6 +381,9 @@ export default function ExamRoster({ password }) {
                     <>
                       <div style={{ flex: 1, fontSize: 14, color: C.dark }}>
                         {m.displayName || m.name}
+                        {m.school && (
+                          <span style={{ fontSize: 11, color: C.dim, marginLeft: 6 }}>{m.school}</span>
+                        )}
                         {m.displayName && m.displayName !== m.name && (
                           <span style={{ fontSize: 11, color: C.dim, marginLeft: 6 }}>原名 {m.name}</span>
                         )}

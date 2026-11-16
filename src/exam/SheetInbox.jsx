@@ -372,7 +372,7 @@ export default function SheetInbox({ password }) {
             {catalog.map((s) =>
               (s.groups || []).map((g) => (
                 <option key={g.gid} value={g.gid}>
-                  {s.school} · {g.name}
+                  {g.grade ? g.grade + " · " : ""}{g.name}
                 </option>
               ))
             )}

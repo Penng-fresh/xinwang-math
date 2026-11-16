@@ -36,9 +36,10 @@ const C = {
   cream: "#f0e8d0"
 };
 
-// 这台设备上输过的孩子：[{gid, name, sid, at}]，最多存 10 条。
+// 这台设备上输过的孩子：[{gid, name, sid, school, at}]，最多存 10 条。
 // 只存在家长自己的手机里，服务端不返回任何名单 —— 所以既要让老家长零打字，
 // 又不能让任何人的名字被别人看见，只能靠这个。
+// school 也记在这里：家长第二次传就不用再填一遍孩子的学校。
 const PEOPLE_KEY = "xw_sheet_people";
 
 function loadPeople() {
@@ -54,7 +55,7 @@ function loadPeople() {
 function savePerson(p) {
   try {
     const list = loadPeople().filter((x) => !(x.gid === p.gid && x.name === p.name));
-    list.unshift({ gid: p.gid, name: p.name, sid: p.sid || "", at: Date.now() });
+    list.unshift({ gid: p.gid, name: p.name, sid: p.sid || "", school: p.school || "", at: Date.now() });
     localStorage.setItem(PEOPLE_KEY, JSON.stringify(list.slice(0, 10)));
   } catch (_) {}
 }
@@ -226,10 +227,13 @@ function Sel({ label, value, onChange, disabled, children }) {
 
 export default function ExamUpload({ mode = "parent", onUploaded }) {
   const [catalog, setCatalog] = useState(null); // null = 读取中
-  const [grade, setGrade] = useState(""); // 家长端年级筛选（学校下有多个年级时才出现）
+  const [grade, setGrade] = useState(""); // 家长端年级筛选（补习班班有多个年级时才出现）
   const [gid, setGid] = useState("");
   const [sid, setSid] = useState("");
   const [name, setName] = useState("");
+  // 孩子读哪所学校：学生属性，不是分组。家长手填，本机记过就带出来。
+  // 选填 —— 纸质卷阶段学校用不上；等 AI 按学校归卷子时，这个字段才有用。
+  const [studentSchool, setStudentSchool] = useState("");
   const [people, setPeople] = useState([]);
   const [exams, setExams] = useState([]);
   const [examId, setExamId] = useState("");
@@ -263,18 +267,24 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
         const schools = Array.isArray(d.schools) ? d.schools : [];
         setCatalog(schools);
 
+        // 补习班的班不按学校拆，把目录里所有分组摊平，家长按年级 → 班级选。
+        const allGroups = schools.flatMap((s) => s.groups || []);
         const list = loadPeople();
         setPeople(list);
+        // 默认落到第一个年级的第一个班，别让家长一进来面对一串空下拉。
+        const firstGrade = gradesOf(allGroups)[0] || "";
+        const firstGroup = allGroups.find((g) => g.grade === firstGrade) || allGroups[0];
+        setGrade(firstGroup?.grade || "");
+        setGid(firstGroup?.gid || "");
         if (list.length === 0) return;
         // 恢复最近一次用的班级和名字。班级可能已经被删了，先确认还在目录里。
-        const allGroups = [];
-        schools.forEach((s) => (s.groups || []).forEach((g) => allGroups.push(g)));
         const last = list.find((p) => allGroups.some((g) => g.gid === p.gid));
         if (!last) return;
         const lastGroup = allGroups.find((g) => g.gid === last.gid);
         setGrade(lastGroup?.grade || "");
         setGid(last.gid);
         setName(last.name);
+        setStudentSchool(last.school || "");
         if (last.sid) setSid(last.sid);
       } catch (e) {
         if (!alive) return;
@@ -341,11 +351,14 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
     };
   }, [sid, done]);
 
-  const school = catalog?.find((s) => (s.groups || []).some((g) => g.gid === gid));
-
-  // 当前学校的班级按年级筛。一个年级一个班时年级下拉不出现，不多一步操作。
-  const gradeOptions = gradesOf(school?.groups);
-  const classList = (school?.groups || []).filter((g) => !grade || g.grade === grade);
+  // 订阅班是补习班的班，不按学校拆。学校只是学生身上的一个属性。
+  // 所以把目录里所有分组摊平，家长直接按年级 → 班级选。
+  const allGroups = (catalog || []).flatMap((s) => s.groups || []);
+  const gradeOptions = gradesOf(allGroups);
+  const classList = allGroups.filter((g) => !grade || g.grade === grade);
+  // "孩子学校"的候选只从这台设备记过的学生里来。
+  // 不拉全班名单 —— 隐私红线上家长端看不到别的孩子信息。
+  const schoolOptions = [...new Set(people.map((p) => p.school).filter(Boolean))];
   // 这台设备在这个班输过的名字。别的家长的名字永远不会出现在这里 ——
   // 数据只在本地，服务端根本不返回名单。
   const sameGid = gid ? people.filter((p) => p.gid === gid) : [];
@@ -393,7 +406,7 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
 
   const submit = async () => {
     setErr("");
-    if (!gid) return setErr("先选学校");
+    if (!gid) return setErr("先选班级");
     if (!name.trim()) return setErr("先填孩子的姓名");
     if (!examId) return setErr("先选这次是哪场考试");
     if (shots.length === 0) return setErr("还没选答题卡");
@@ -410,6 +423,8 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
           // 本机记过就带 sid（最快最准）；没记过只给名字，服务端按「班级+姓名」认领或新建
           sid: sid || "",
           studentName: sid ? "" : name.trim(),
+          // 学校记在学生身上，将来 AI 按同一所学校的卷子分析时用。
+          studentSchool: studentSchool.trim(),
           examId: examId || "",
           note,
           source: mode,
@@ -423,7 +438,7 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
       if (!r.ok || d.error) throw new Error(d?.error || r.statusText);
       if (d.sid) {
         setSid(d.sid);
-        savePerson({ gid, name: d.studentName || name.trim(), sid: d.sid });
+        savePerson({ gid, name: d.studentName || name.trim(), sid: d.sid, school: studentSchool.trim() });
         setPeople(loadPeople());
       }
       setDone(d);
@@ -527,39 +542,18 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
 
       {!loading && catalog.length > 0 && (
         <>
-          <Sel
-            label="学校"
-            value={school ? school.school : ""}
-            onChange={(e) => {
-              const s = catalog.find((x) => x.school === e.target.value);
-              const gs = gradesOf(s?.groups);
-              const first = gs[0] || "";
-              setGrade(first);
-              const firstGroup = (s?.groups || []).find((g) => !first || g.grade === first) || s?.groups?.[0];
-              setGid(firstGroup?.gid || "");
-              setSid("");
-              setName("");
-            }}
-          >
-            <option value="">请选择</option>
-            {catalog.map((s) => (
-              <option key={s.school} value={s.school}>
-                {s.school}
-              </option>
-            ))}
-          </Sel>
-
-          {school && gradeOptions.length > 1 && (
+          {gradeOptions.length > 1 && (
             <Sel
               label="年级"
               value={grade}
               onChange={(e) => {
                 const g = e.target.value;
                 setGrade(g);
-                const firstGroup = (school.groups || []).find((x) => x.grade === g);
+                const firstGroup = allGroups.find((x) => x.grade === g);
                 setGid(firstGroup?.gid || "");
                 setSid("");
                 setName("");
+                setStudentSchool("");
               }}
             >
               {gradeOptions.map((g) => (
@@ -568,30 +562,30 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
             </Sel>
           )}
 
-          {school && classList.length > 1 && (
-            <Sel
-              label="班级"
-              value={gid}
-              onChange={(e) => {
-                setGid(e.target.value);
-                setSid("");
-                setName("");
-              }}
-            >
-              {classList.map((g) => (
-                <option key={g.gid} value={g.gid}>
-                  {(g.grade ? g.grade + " " : "") + (g.name || "未命名班级")}
-                </option>
-              ))}
-            </Sel>
-          )}
+          {/* 班级始终显示，哪怕只有一个：家长得知道这份卷子传到哪个班了。 */}
+          <Sel
+            label="班级"
+            value={gid}
+            onChange={(e) => {
+              setGid(e.target.value);
+              setSid("");
+              setName("");
+              setStudentSchool("");
+            }}
+          >
+            {classList.map((g) => (
+              <option key={g.gid} value={g.gid}>
+                {(g.grade ? g.grade + " · " : "") + (g.name || "未命名班级")}
+              </option>
+            ))}
+          </Sel>
 
           <div style={{ marginBottom: 12 }}>
             <div style={labelStyle}>孩子姓名</div>
             <input
               value={name}
               onChange={(e) => setName(e.target.value.replace(/\s+/g, ""))}
-              placeholder={gid ? "填孩子的名字，和学校里用的一致" : "先选学校"}
+              placeholder={gid ? "填孩子的名字" : "先选班级"}
               disabled={!gid}
               maxLength={20}
               style={{ ...controlStyle, background: gid ? "#fff" : C.soft }}
@@ -601,7 +595,10 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
                 {sameGid.filter((p) => p.name !== name).map((p) => (
                   <button
                     key={p.name}
-                    onClick={() => setName(p.name)}
+                    onClick={() => {
+                      setName(p.name);
+                      setStudentSchool(p.school || "");
+                    }}
                     style={{
                       background: name === p.name ? "#2a2218" : C.soft,
                       color: name === p.name ? C.cream : "#7a6a4a",
@@ -625,6 +622,28 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
             )}
           </div>
 
+          {/* 学校是学生属性，不是班级：一个班里有宝一中、新建路中学好几个学校。
+              先选填，等上线 AI 卷面分析时，靠它把同一所学校的卷子归到一起。 */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={labelStyle}>孩子学校（可不填）</div>
+            <input
+              list="xw-student-schools"
+              value={studentSchool}
+              onChange={(e) => setStudentSchool(e.target.value)}
+              placeholder="比如：宝一中 / 新建路中学"
+              maxLength={30}
+              style={controlStyle}
+            />
+            <datalist id="xw-student-schools">
+              {schoolOptions.map((s) => (
+                <option key={s} value={s} />
+              ))}
+            </datalist>
+            <div style={{ fontSize: 11.5, color: C.dim, marginTop: 7, lineHeight: 1.8 }}>
+              这台手机填过的学校会自动提示。现在只是记下来，以后按同一所学校的卷子分析时用得上。
+            </div>
+          </div>
+
           {gid && (
             <Sel label="哪一场考试（必选）" value={examId} onChange={(e) => setExamId(e.target.value)}>
               <option value="">请选择考试</option>
@@ -636,7 +655,7 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
             </Sel>
           )}
           {gid && exams.length === 0 && (
-            <div style={{ fontSize: 11.5, color: C.danger, marginBottom: 12, lineHeight: 1.8 }}>
+            <div style={{ fontSize: 11.5, color: "#a03030", marginBottom: 12, lineHeight: 1.8 }}>
               这个班还没有考试可选。请联系彭老师先建班，或刷新页面重试。
             </div>
           )}

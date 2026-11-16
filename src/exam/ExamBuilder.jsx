@@ -378,7 +378,7 @@ export default function ExamBuilder({ password }) {
       {err && <div style={{ background: C.dangerBg, border: "1px solid #f0a0a0", borderRadius: 9, padding: "9px 12px", color: C.danger, fontSize: 12.5, marginBottom: 12 }}>{err}</div>}
 
       <div style={S.card}>
-        <div style={{ ...S.label, fontSize: 11.5, marginBottom: 8 }}>先选一个分组（学校 + 年级 + 班）</div>
+        <div style={{ ...S.label, fontSize: 11.5, marginBottom: 8 }}>先选一个班</div>
         {groups.length === 0 ? (
           <div style={{ fontSize: 12.5, color: C.danger, lineHeight: 1.9 }}>
             还没有分组。请先去「学生名单」页签建一个分组、把名字导进去，再回来建考试。
@@ -401,7 +401,7 @@ export default function ExamBuilder({ password }) {
                   fontWeight: gid === g.gid ? 600 : 400,
                 }}
               >
-                {g.school || "未填学校"} · {g.grade} {g.name}（{g.count || g.memberCount || 0}人）
+                {g.grade ? g.grade + " · " : ""}{g.name}（{g.count || g.memberCount || 0}人）
               </button>
             ))}
           </div>

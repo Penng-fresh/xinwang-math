@@ -99,6 +99,7 @@ function listView(s) {
 // 不要新建分组。新建了 gid 就变，同一个孩子的历史会断成两截。
 async function ensureStudent({ gid, school, grade, rawName }) {
   const name = String(rawName || "").replace(/\s+/g, "").trim();
+  const cleanSchool = String(school || "").replace(/\s+/g, "").trim().slice(0, 30);
   if (!name) return { error: "请先填孩子的姓名" };
   if (name.length > 20) return { error: "姓名太长了，只填名字就行" };
 
@@ -109,7 +110,20 @@ async function ensureStudent({ gid, school, grade, rawName }) {
       const s = sums[sids[i]];
       if (s && (s.name === name || s.displayName === name)) {
         const full = await getJSON(K.student(sids[i]));
-        if (full) return { sid: sids[i], student: full };
+        if (!full) continue;
+        // 老学生以前没记学校（或记的是班级的学校），这次家长补填了就写进去。
+        // 只在原来为空时补，不覆盖已有的 —— 避免家长随手填错把对的抹掉。
+        if (cleanSchool && !full.school) {
+          const next = { ...full, school: cleanSchool };
+          await redisPipe([
+            ["SET", K.student(sids[i]), JSON.stringify(next)],
+            ["HSET", K.studentSum(), sids[i], JSON.stringify({
+              ...(s || {}), sid: sids[i], school: cleanSchool
+            })]
+          ]);
+          return { sid: sids[i], student: next };
+        }
+        return { sid: sids[i], student: full };
       }
     }
   }
@@ -119,7 +133,8 @@ async function ensureStudent({ gid, school, grade, rawName }) {
     sid,
     name,
     displayName: name,
-    school: school || "",
+    // 学校是学生的属性，不是班级的。家长填了就记在孩子身上。
+    school: cleanSchool,
     grade: grade || "",
     gid,
     createdAt: new Date().toISOString(),
@@ -312,10 +327,24 @@ export default async function handler(req, res) {
         }
         student = await getJSON(K.student(sid));
         if (!student) return res.status(404).json({ error: "找不到这个学生，请重新填写姓名" });
+        // 本机记过名字时会带 sid，走不到 ensureStudent。这里补一次学校：
+        // 第一次没填、这次想起来了，应该能补上；已有学校则不覆盖。
+        const addSchool = String(body.studentSchool || "").replace(/\s+/g, "").trim().slice(0, 30);
+        if (addSchool && !student.school) {
+          student = { ...student, school: addSchool };
+          const oldSum = await redisCmd(["HGET", K.studentSum(), sid]);
+          let sumObj = {};
+          try { sumObj = typeof oldSum === "string" ? JSON.parse(oldSum) : (oldSum || {}); } catch (_) {}
+          await redisPipe([
+            ["SET", K.student(sid), JSON.stringify(student)],
+            ["HSET", K.studentSum(), sid, JSON.stringify({ ...sumObj, sid, school: addSchool })]
+          ]);
+        }
       } else {
         const r = await ensureStudent({
           gid,
-          school: group.school || "",
+          // 家长填的学校优先；没填才退回分组上的（老班可能填过）
+          school: body.studentSchool || group.school || "",
           grade: group.grade || "",
           rawName: body.studentName
         });
@@ -385,8 +414,9 @@ export default async function handler(req, res) {
       const meta = {
         id,
         gid,
-        school: group.school || student.school || "",
-        grade: group.grade || student.grade || "",
+        // 学校记在学生身上；老学生的分组上可能还留着旧值，只作兜底。
+        school: student.school || group.school || "",
+        grade: student.grade || group.grade || "",
         groupName: group.name || "",
         sid,
         studentName: student.displayName || student.name || "",
