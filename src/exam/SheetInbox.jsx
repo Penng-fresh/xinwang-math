@@ -181,11 +181,17 @@ export default function SheetInbox({ password }) {
     };
   }, [gid]);
 
+  // 两个视角各有一份数据，缺交判断要跟着当前视角走 ——
+  // 只认 students 的话，切到「按提交」再换班级，算的是旧班的人。
+  const gotSids = useMemo(() => {
+    if (mode === "student") return new Set(students.map((s) => s.sid));
+    return new Set(sheets.map((s) => s.sid));
+  }, [mode, students, sheets]);
+
   const missing = useMemo(() => {
     if (!gid || members.length === 0) return [];
-    const got = new Set(students.map((s) => s.sid));
-    return members.filter((m) => !got.has(m.sid));
-  }, [gid, members, students]);
+    return members.filter((m) => !gotSids.has(m.sid));
+  }, [gid, members, gotSids]);
 
   const openSheet = async (s) => {
     if (openId === s.id) {
