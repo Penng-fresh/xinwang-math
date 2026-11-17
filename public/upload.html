@@ -299,7 +299,7 @@
     examEl.textContent = "";
     var o0 = document.createElement("option");
     o0.value = "";
-    o0.textContent = "选一下这次考的哪场";
+    o0.textContent = "请选择本次考试";
     examEl.appendChild(o0);
     if (!gid) return;
     fetch("/api/exams?view=open&gid=" + encodeURIComponent(gid), { cache: "no-store" })
