@@ -121,24 +121,23 @@
   <p class="sub">这次的答题卡麻烦你传上来。智学网能下原卷就传原卷，截图、拍照也行，一页一张就好。</p>
 
   <div class="card">
-    <label for="gid">孩子在哪个班</label>
+    <label for="gid">孩子年级</label>
     <select id="gid"></select>
 
-    <label for="name">孩子叫什么</label>
-    <input id="name" autocomplete="off" placeholder="写名字就行">
+    <label for="name">孩子姓名</label>
+    <input id="name" autocomplete="off" placeholder="">
 
-    <label for="school">孩子在哪上学</label>
-    <input id="school" autocomplete="off" list="schoolList" placeholder="写学校名字，这台手机下次会自动带出来">
-    <datalist id="schoolList"></datalist>
+    <label for="school">孩子学校</label>
+    <select id="school"><option value="">选孩子读的学校</option></select>
 
-    <label for="exam">这是哪次考试</label>
-    <select id="exam"><option value="">选一下这次考的哪场</option></select>
+    <label for="exam">考试场次</label>
+    <select id="exam"><option value="">请选择本次考试</option></select>
 
-    <label for="score">总分知道就填，不知道空着也没关系</label>
+    <label for="score">总分（智学网下载的答题卡上有总分就不用填；答题卡上没显示总分请在这里填）</label>
     <input id="score" type="number" inputmode="decimal" min="0" max="200" step="0.5" placeholder="比如 108">
 
     <div class="files-head">
-      <strong>把答题卡加上</strong>
+      <strong>把答题卡传上来</strong>
       <div class="file-btns">
         <button class="mini" type="button" id="pickBtn">从手机里选</button>
         <button class="mini" type="button" id="camBtn">直接拍</button>
@@ -149,8 +148,8 @@
     <div class="list" id="list"></div>
     <div class="hint" id="fileHint">一页一张，最多 9 张。一次传不完就分两次，都会算到孩子名下。</div>
 
-    <label for="note">想跟我说一句（可不填）</label>
-    <textarea id="note" rows="2" placeholder="比如哪张拍得不清楚"></textarea>
+    <label for="note">还有什么想告诉我的（可不填）</label>
+    <textarea id="note" rows="3" placeholder="比如这次时间紧、哪些题型希望我讲一下"></textarea>
 
     <button class="submit" type="button" id="submitBtn">传上去</button>
     <div class="err" id="err"></div>
@@ -182,6 +181,15 @@
   var TOTAL_BUDGET = 3200000;
   var PDF_MAX_BYTES = 2 * 1024 * 1024;
   var PEOPLE_KEY = "xw_sheet_people";
+  var CONTACT_SCHOOL = "__contact__";
+  // penng 点名的 9 所原样保留；后面是宝鸡市教育局/地图可查证的市区初中补充
+  var FIXED_SCHOOLS = [
+    "宝一中", "新建路中学", "新福园中学", "高新中学", "渭滨一校",
+    "金陵中学", "三迪中学", "电子街中学", "铁五处中学",
+    "宝鸡市长岭中学", "宝鸡市石油中学", "宝鸡市渭滨中学", "宝鸡市金台中学",
+    "宝鸡市姜城中学", "宝鸡市相家庄中学", "烽火中学", "西关中学",
+    "宝鸡高新第一初级中学", "店子街中学", "宝鸡市陈仓园初级中学"
+  ];
 
   var $ = function (id) { return document.getElementById(id); };
   var gidEl = $("gid"), nameEl = $("name"), schoolEl = $("school"), examEl = $("exam");
@@ -223,17 +231,34 @@
   }
 
   function fillSchools() {
+    var sel = $("school");
+    sel.textContent = "";
+    var first = document.createElement("option");
+    first.value = "";
+    first.textContent = "选孩子读的学校";
+    sel.appendChild(first);
     var seen = {};
-    var dl = $("schoolList");
-    dl.textContent = "";
+    FIXED_SCHOOLS.forEach(function (name) {
+      var o = document.createElement("option");
+      o.value = name;
+      o.textContent = name;
+      sel.appendChild(o);
+      seen[name] = 1;
+    });
+    // 本机历史里出现过的学校若不在固定名单里，也补进来，免得老家长刷新后学校一栏变空
     loadPeople().forEach(function (p) {
-      if (p.school && !seen[p.school]) {
+      if (p.school && !seen[p.school] && p.school !== CONTACT_SCHOOL) {
         seen[p.school] = 1;
         var o = document.createElement("option");
         o.value = p.school;
-        dl.appendChild(o);
+        o.textContent = p.school;
+        sel.appendChild(o);
       }
     });
+    var other = document.createElement("option");
+    other.value = CONTACT_SCHOOL;
+    other.textContent = "没有？联系彭老师添加";
+    sel.appendChild(other);
   }
 
   function loadCatalog() {
@@ -256,6 +281,8 @@
         var last = loadLast();
         var pick = last && groups.some(function (g) { return g.gid === last.gid; }) ? last.gid : groups[0].gid;
         gidEl.value = pick;
+        // 先把学校下拉的选项填好，再回填本机记忆，否则 select 没有对应 option，值会丢
+        fillSchools();
         if (last) {
           if (last.gid === pick) {
             nameEl.value = last.name || "";
@@ -263,7 +290,6 @@
             lastSid = last.sid || "";
           }
         }
-        fillSchools();
         loadExams(pick);
       })
       .catch(function (e) { showErr(e.message || "页面没打开，刷新一下"); });
@@ -442,10 +468,11 @@
   }
 
   function validate() {
-    if (!gidEl.value) return "先选一下孩子在哪个班";
-    if (!nameEl.value.trim()) return "先写孩子名字";
-    if (!schoolEl.value.trim()) return "先写孩子在哪上学";
-    if (!examEl.value) return "先选这是哪次考试";
+    if (!gidEl.value) return "先选孩子读几年级";
+    if (!nameEl.value.trim()) return "写一下孩子姓名";
+    if (!schoolEl.value) return "先选孩子的学校";
+    if (schoolEl.value === CONTACT_SCHOOL) return "名单里没有的话，先联系彭老师加上学校，再回来传";
+    if (!examEl.value) return "先选这次是哪场考试";
     if (!shots.length) return "还没选答题卡照片";
     if (scoreEl.value.trim()) {
       var n = Number(scoreEl.value);
