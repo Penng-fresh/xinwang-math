@@ -116,61 +116,61 @@
 </head>
 <body>
 <div class="wrap" id="formWrap">
-  <div class="eyebrow">信望数学</div>
-  <h1>答题卡上传</h1>
-  <p class="sub">智学网原卷、截图、纸质卷拍照都可以。一页一张，别把几页拼成一张。</p>
+  <div class="eyebrow">彭老师这边</div>
+  <h1>给孩子传答题卡</h1>
+  <p class="sub">这次的答题卡麻烦你传上来。智学网能下原卷就传原卷，截图、拍照也行，一页一张就好。</p>
 
   <div class="card">
-    <label for="gid">班级</label>
+    <label for="gid">孩子在哪个班</label>
     <select id="gid"></select>
 
-    <label for="name">孩子姓名</label>
-    <input id="name" autocomplete="off" placeholder="填孩子名字">
+    <label for="name">孩子叫什么</label>
+    <input id="name" autocomplete="off" placeholder="写名字就行">
 
-    <label for="school">孩子学校（必填）</label>
-    <input id="school" autocomplete="off" list="schoolList" placeholder="填现在读的学校">
+    <label for="school">孩子在哪上学</label>
+    <input id="school" autocomplete="off" list="schoolList" placeholder="写学校名字，这台手机下次会自动带出来">
     <datalist id="schoolList"></datalist>
 
-    <label for="exam">这次是哪场考试</label>
-    <select id="exam"><option value="">请选择考试</option></select>
+    <label for="exam">这是哪次考试</label>
+    <select id="exam"><option value="">选一下这次考的哪场</option></select>
 
-    <label for="score">孩子知道的总分（可不填）</label>
-    <input id="score" type="number" inputmode="decimal" min="0" max="200" step="0.5" placeholder="比如 108，不知道就空着">
+    <label for="score">总分知道就填，不知道空着也没关系</label>
+    <input id="score" type="number" inputmode="decimal" min="0" max="200" step="0.5" placeholder="比如 108">
 
     <div class="files-head">
-      <strong>答题卡</strong>
+      <strong>把答题卡加上</strong>
       <div class="file-btns">
-        <button class="mini" type="button" id="pickBtn">选择图片 / PDF</button>
-        <button class="mini" type="button" id="camBtn">拍照</button>
+        <button class="mini" type="button" id="pickBtn">从手机里选</button>
+        <button class="mini" type="button" id="camBtn">直接拍</button>
       </div>
     </div>
     <input id="pick" type="file" accept="image/*,application/pdf" multiple hidden>
     <input id="cam" type="file" accept="image/*" capture="environment" hidden>
     <div class="list" id="list"></div>
-    <div class="hint" id="fileHint">最多 9 份。传不完可以分两次传，都会记到同一个孩子名下。</div>
+    <div class="hint" id="fileHint">一页一张，最多 9 张。一次传不完就分两次，都会算到孩子名下。</div>
 
-    <label for="note">留言（可不填）</label>
-    <textarea id="note" rows="2" placeholder="有特殊情况可以写一句"></textarea>
+    <label for="note">想跟我说一句（可不填）</label>
+    <textarea id="note" rows="2" placeholder="比如哪张拍得不清楚"></textarea>
 
-    <button class="submit" type="button" id="submitBtn">上传答题卡</button>
+    <button class="submit" type="button" id="submitBtn">传上去</button>
     <div class="err" id="err"></div>
   </div>
 
   <div class="notice">
-    <b>怎么传更清楚</b><br>
-    1. 智学网能下载原卷的，优先传 PDF 或原图。<br>
-    2. 只能截图的，一页一张，不要拼成长图。<br>
-    3. 只有纸质答题卡的，拍正、拍清楚，红笔分数要能看见。
+    <b>几点小提醒</b><br>
+    1. 智学网能下原卷最好，直接传 PDF 或原图。<br>
+    2. 截图的话一页一张，别拼成长图，拼了字会糊。<br>
+    3. 纸质的拍正一点，红笔分数要看得清。
   </div>
-  <div class="foot">信望数学 · 彭老师</div>
+  <div class="foot">传好了就不用再发我微信了 · 彭老师</div>
 </div>
 
 <div class="wrap" id="doneWrap" style="display:none">
   <div class="success">
     <div class="tick">✓</div>
-    <h2>收到了</h2>
+    <h2>收到了，我看到了</h2>
     <p id="doneText"></p>
-    <button class="again" type="button" id="againBtn">还有一页要传</button>
+    <button class="again" type="button" id="againBtn">还有一页</button>
   </div>
 </div>
 
@@ -240,12 +240,12 @@
     fetch("/api/roster?view=catalog", { cache: "no-store" })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (x) {
-        if (!x.ok) throw new Error(x.d && x.d.error || "班级读取失败");
+        if (!x.ok) throw new Error(x.d && x.d.error || "班没读出来，刷新一下");
         groups = [];
         (x.d.schools || []).forEach(function (s) {
           (s.groups || []).forEach(function (g) { groups.push(g); });
         });
-        if (!groups.length) throw new Error("老师还没建班，先联系老师");
+        if (!groups.length) throw new Error("还没建班，先别传，联系我");
         gidEl.textContent = "";
         groups.forEach(function (g) {
           var o = document.createElement("option");
@@ -266,20 +266,20 @@
         fillSchools();
         loadExams(pick);
       })
-      .catch(function (e) { showErr(e.message || "页面读取失败，刷新再试"); });
+      .catch(function (e) { showErr(e.message || "页面没打开，刷新一下"); });
   }
 
   function loadExams(gid) {
     examEl.textContent = "";
     var o0 = document.createElement("option");
     o0.value = "";
-    o0.textContent = "请选择考试";
+    o0.textContent = "选一下这次考的哪场";
     examEl.appendChild(o0);
     if (!gid) return;
     fetch("/api/exams?view=open&gid=" + encodeURIComponent(gid), { cache: "no-store" })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (x) {
-        if (!x.ok) throw new Error(x.d && x.d.error || "考试读取失败");
+        if (!x.ok) throw new Error(x.d && x.d.error || "考试没读出来，刷新一下");
         (x.d.exams || []).forEach(function (e) {
           var o = document.createElement("option");
           o.value = e.id;
@@ -287,7 +287,7 @@
           examEl.appendChild(o);
         });
       })
-      .catch(function (e) { showErr(e.message || "考试读取失败"); });
+      .catch(function (e) { showErr(e.message || "考试没读出来，刷新一下"); });
   }
 
   function renderShots() {
@@ -313,14 +313,14 @@
       var del = document.createElement("button");
       del.type = "button";
       del.className = "del";
-      del.textContent = "删除";
+      del.textContent = "去掉";
       del.onclick = function () { shots.splice(i, 1); renderShots(); };
       row.appendChild(del);
       listEl.appendChild(row);
     });
     hintEl.textContent = shots.length
-      ? "已选 " + shots.length + " 份" + (shots.length < MAX_SHOTS ? "，还能加 " + (MAX_SHOTS - shots.length) + " 份" : "，已到上限")
-      : "最多 9 份。传不完可以分两次传，都会记到同一个孩子名下。";
+      ? "选了 " + shots.length + " 张" + (shots.length < MAX_SHOTS ? "，还能加 " + (MAX_SHOTS - shots.length) + " 张" : "，够 9 张了")
+      : "一页一张，最多 9 张。一次传不完就分两次，都会算到孩子名下。";
   }
 
   function readImage(file) {
@@ -412,44 +412,44 @@
     var arr = Array.prototype.slice.call(files || []);
     if (!arr.length) return;
     showErr("");
-    if (shots.length >= MAX_SHOTS) { showErr("最多 9 份，已经到上限了"); return; }
+    if (shots.length >= MAX_SHOTS) { showErr("够 9 张了，多了传不上"); return; }
     busy = true;
     submitEl.disabled = true;
-    submitEl.textContent = "正在处理照片…";
+    submitEl.textContent = "正在整理照片…";
     try {
       for (var i = 0; i < arr.length; i++) {
-        if (shots.length >= MAX_SHOTS) { showErr("最多 9 份，多的没有加进来"); break; }
+        if (shots.length >= MAX_SHOTS) { showErr("够 9 张了，多的没加进来"); break; }
         var f = arr[i];
         var isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name || "");
         try {
           var item = isPdf ? await readPdf(f) : await compressSheet(f);
           var used = shots.reduce(function (n, x) { return n + x.data.length; }, 0);
           if (used + item.data.length > TOTAL_BUDGET) {
-            showErr("几张照片加起来太大了，减到两张，或者重新拍一次");
+            showErr("几张加起来太大，先少传两张，或者重拍一次");
             break;
           }
           shots.push(item);
           renderShots();
         } catch (e) {
-          showErr(e.message || "这份文件处理失败，换一份试试");
+          showErr(e.message || "这份没处理好，换一份");
         }
       }
     } finally {
       busy = false;
       submitEl.disabled = false;
-      submitEl.textContent = "上传答题卡";
+      submitEl.textContent = "传上去";
     }
   }
 
   function validate() {
-    if (!gidEl.value) return "先选班级";
-    if (!nameEl.value.trim()) return "先填孩子姓名";
-    if (!schoolEl.value.trim()) return "先填孩子读哪所学校";
-    if (!examEl.value) return "先选这次是哪场考试";
-    if (!shots.length) return "还没有选答题卡照片";
+    if (!gidEl.value) return "先选一下孩子在哪个班";
+    if (!nameEl.value.trim()) return "先写孩子名字";
+    if (!schoolEl.value.trim()) return "先写孩子在哪上学";
+    if (!examEl.value) return "先选这是哪次考试";
+    if (!shots.length) return "还没选答题卡照片";
     if (scoreEl.value.trim()) {
       var n = Number(scoreEl.value);
-      if (!isFinite(n) || n < 0 || n > 200) return "分数填 0 到 200 之间的数字";
+      if (!isFinite(n) || n < 0 || n > 200) return "分数填个 0 到 200 的数就行";
     }
     return "";
   }
@@ -461,7 +461,7 @@
     showErr("");
     busy = true;
     submitEl.disabled = true;
-    submitEl.textContent = "正在上传，别关页面…";
+    submitEl.textContent = "正在传，别关页面…";
     var payload = {
       gid: gidEl.value,
       examId: examEl.value,
@@ -478,7 +478,7 @@
         body: JSON.stringify(payload)
       });
       var d = await r.json().catch(function () { return {}; });
-      if (!r.ok || d.error) throw new Error(d.error || "上传失败");
+      if (!r.ok || d.error) throw new Error(d.error || "没传上去");
       var scoreWanted = !!scoreEl.value.trim();
       var scoreSaved = false;
       if (scoreWanted) {
@@ -496,16 +496,16 @@
       lastSid = d.sid || "";
       doneText.textContent = (d.studentName || nameEl.value.trim()) +
         (d.examName ? " · " + d.examName : "") + " · " + (d.imageCount || shots.length) + " 份" +
-        (scoreWanted && !scoreSaved ? "（分数没记上，老师会补）" : "");
+        (scoreWanted && !scoreSaved ? "（分数没记上，我后面补）" : "");
       formWrap.style.display = "none";
       doneWrap.style.display = "block";
       window.scrollTo(0, 0);
     } catch (e) {
-      showErr(e.message || "上传失败，检查网络后再点一次");
+      showErr(e.message || "没传上去，看看网络再点一次");
     } finally {
       busy = false;
       submitEl.disabled = false;
-      submitEl.textContent = "上传答题卡";
+      submitEl.textContent = "传上去";
     }
   }
 
