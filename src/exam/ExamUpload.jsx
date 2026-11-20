@@ -1,9 +1,7 @@
 // 答题卡上传（家长端入口）
 //
-// 这一版只做「收」，不做「判」。原因写在下面对家长的说明里，不藏着：
-// 判断一份卷子的 3 分该不该丢，前提是老师先把这份卷子按难度分过类；
-// 那个前提在期中之前不成立。但答题卡是过期就补不回来的东西，
-// 所以先把原件收下来，分析能力后补。
+// 只做「收」：把原件完整收下来，老师能看、能下载。
+// 页面上不出现任何还没落地的能力描述，也不解释产品进度。
 //
 // 几个刻意的选择：
 //   1) 名字手填，系统按「班级 + 姓名」认领。不预导名单有两层考虑：
@@ -11,8 +9,8 @@
 //   2) 考试必选，而且只有建班时预置的四场：第一次月考、期中、第二次月考、期末。
 //      不设「未指定」—— 那种答卷按考试筛永远出不来，"这场谁没交"会冤枉人。
 //      也不替家长默认勾第一场：默默算成月考比不填更难发现。
-//   2b) 学校必填。将来 AI 分析卷面要先有这一份卷子的评分标准；同一所学校的
-//      统一考试用同一份卷子，标准就能复用。少一个学校字段，每份卷子都得单独建标准。
+//   2b) 学校必填。将来同一所学校的统一考试用同一份卷子，标准能复用；
+//      少一个学校字段，每份卷子都得单独建标准。这一层不向家长解释。
 //   3) 照片压到 ~50 万字符一张（2000px 长边、约 170dpi）。答题卡上的字
 //      和红笔批改都要看得清，不能像作业检查那样压到 900px。
 //   4) 记一台设备上次选的学生。一个家长通常只管一个孩子，
@@ -240,9 +238,6 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
   const [exams, setExams] = useState([]);
   const [examId, setExamId] = useState("");
   const [shots, setShots] = useState([]);
-  // 只影响提示文案，不进数据：家长先说清手上是什么，提示才对得上，
-  // 比把三条注意事项一起堆在下面有效。
-  const [sourceKind, setSourceKind] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [note, setNote] = useState("");
   // 家长看纸质答题卡报的总分。空着也能传 —— 有的学校不让拍照带走，
@@ -251,8 +246,6 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [done, setDone] = useState(null);
-  // 家长上传成功后等后台 AI 出结论。只给结论，不给老师用的核对细节。
-  const [parentAnalysis, setParentAnalysis] = useState(null);
   const [mine, setMine] = useState(null);
   const [loadErr, setLoadErr] = useState("");
 
@@ -327,38 +320,6 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
       alive = false;
     };
   }, [gid]);
-
-  // ── 上传成功后，等家长自己那一份的 AI 初步结论 ──
-  // 分析在后台跑，家长不用对着上传按钮转圈；结论出来前只显示一行进度。
-  // 只认 sheet id + sid，sid 是随机串且必须和档案一致，不会看到别人家的孩子。
-  useEffect(() => {
-    setParentAnalysis(null);
-    if (!done || mode !== "parent" || !done.analyzing || !done.id || !done.sid) return;
-    let alive = true;
-    let timer = null;
-    let tries = 0;
-    let stop = false;
-    const poll = async () => {
-      try {
-        const r = await fetch(
-          `/api/analysis?view=mine&id=${encodeURIComponent(done.id)}&sid=${encodeURIComponent(done.sid)}`
-        );
-        const d = await r.json().catch(() => ({}));
-        if (alive && r.ok) {
-          const a = d.analysis || null;
-          setParentAnalysis(a);
-          if (a && (a.status === "done" || a.status === "error" || (a.status === "pending" && a.error))) stop = true;
-        }
-      } catch (_) {}
-      tries += 1;
-      if (alive && !stop && tries < 30) timer = setTimeout(poll, 5000);
-    };
-    poll();
-    return () => {
-      alive = false;
-      if (timer) clearTimeout(timer);
-    };
-  }, [done?.id, done?.sid, done?.analyzing, mode]);
 
   // ── 名字变了：本机记过的（同班同名）直接用 sid，没记过就交给服务端认领 ──
   useEffect(() => {
@@ -478,12 +439,11 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
         savePerson({ gid, name: d.studentName || name.trim(), sid: d.sid, school: studentSchool.trim() });
         setPeople(loadPeople());
       }
-      setParentAnalysis(null);
       setDone(d);
 
-      // 自动分析必须在这里触发。服务端上传函数里 fire-and-forget 会被 Vercel 冻结，
-      // 实测 90 秒都没生成分析记录；这里另开一个请求，让分析函数自己同步跑完。
-      // 不 await：家长先看到"收到了"，分析在后台这个独立请求里继续。
+      // 后台核卷（老师端用）。这一层不出现在家长页面上：
+      // 服务端上传函数里 fire-and-forget 会被 Vercel 冻结，实测 90 秒都没生成记录；
+      // 这里另开一个请求让它自己跑完。不 await，家长先看到回执。
       if (d.analyzing && d.id && d.sid) {
         fetch("/api/analysis", {
           method: "POST",
@@ -531,17 +491,10 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
 
   // ══════════ 上传成功 ══════════
   if (done) {
-    const pa = parentAnalysis;
-    const paMismatch = pa && pa.ok && pa.total !== null && done.parentScore !== null && Number(done.parentScore) !== Number(pa.total);
-    const PA_LEVELS = [
-      ["base", "不该丢", "#c03030", "#fde8e8"],
-      ["mid", "讲过", "#a06a10", "#fdf3dc"],
-      ["hard", "压轴", "#5a5a5a", "#eeeeee"]
-    ];
     return (
       <div style={{ background: C.card, borderRadius: 14, border: "1px solid " + C.line, padding: "26px 20px", textAlign: "center" }}>
         <div style={{ width: 54, height: 54, borderRadius: 27, background: "#e8f5e0", color: "#3a8a3a", fontSize: 26, lineHeight: "54px", margin: "0 auto 14px" }}>✓</div>
-        <div style={{ fontSize: 17, fontWeight: 700, color: C.dark, marginBottom: 8 }}>收到了</div>
+        <div style={{ fontSize: 17, fontWeight: 700, color: C.dark, marginBottom: 8 }}>答题卡已提交</div>
         <div style={{ fontSize: 13.5, color: "#5a4a30", lineHeight: 1.9 }}>
           {done.studentName}
           {done.examName ? " · " + done.examName : " · 未指定考试"} · {done.imageCount} 份
@@ -549,44 +502,8 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
         <div style={{ fontSize: 12.5, color: C.dim, lineHeight: 1.9, marginTop: 12 }}>
           {mode === "teacher"
             ? "已经挂到这个学生名下了，在下面的列表里能看到。"
-            : "原件收到了。我这边正在自动核对卷面，稍等一下就能看到初步结果。"}
+            : "原件已经收到了，我会看原卷。"}
         </div>
-        {mode === "parent" && done.analyzing && (
-          <div style={{ marginTop: 12, textAlign: "left", background: C.soft, border: "1px solid " + C.line, borderRadius: 10, padding: "11px 12px" }}>
-            {!pa || pa.status === "running" || (pa.status === "pending" && !pa.error) ? (
-              <div style={{ fontSize: 12.5, color: "#7a6a4a", lineHeight: 1.9 }}>
-                正在自动核对卷面…这一步只读红笔分数，先不用管。
-              </div>
-            ) : pa.status === "done" && pa.ok ? (
-              <>
-                <div style={{ fontSize: 12.5, color: C.dark, lineHeight: 1.9 }}>
-                  初步读分：<b>{pa.total === null ? "没读清" : pa.total + " 分"}</b>
-                  {pa.needsReview ? "，有几处要我再对一下原卷。" : "。"}
-                </div>
-                {paMismatch && (
-                  <div style={{ fontSize: 11.5, color: "#a03030", lineHeight: 1.8, marginTop: 4 }}>
-                    和你填的 {done.parentScore} 分对不上，我会按原卷再核一遍。
-                  </div>
-                )}
-                <div style={{ display: "flex", gap: 6, marginTop: 9 }}>
-                  {PA_LEVELS.map(([key, name, color, bg]) => (
-                    <div key={key} style={{ flex: 1, minWidth: 0, background: bg, borderRadius: 7, padding: "7px 8px", textAlign: "center" }}>
-                      <div style={{ fontSize: 10.5, color }}>{name}</div>
-                      <div style={{ fontSize: 12.5, fontWeight: 700, color, marginTop: 2 }}>丢 {pa.lost?.[key] || 0} 分</div>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ fontSize: 10.5, color: C.dim, lineHeight: 1.8, marginTop: 8 }}>
-                  这是初步结果，最后以老师讲评为准。
-                </div>
-              </>
-            ) : (
-              <div style={{ fontSize: 12.5, color: "#7a6a4a", lineHeight: 1.9 }}>
-                初步核对暂时没出来，原件已经收到了，我会看原卷。
-              </div>
-            )}
-          </div>
-        )}
         {done.scoreWanted && !done.scoreSaved && (
           <div style={{ background: "#fdf3dc", border: "1px solid #e8c870", borderRadius: 8, padding: "9px 12px", marginTop: 12, fontSize: 12, color: "#7a5a20", lineHeight: 1.8 }}>
             答题卡收到了，但分数没记上。等下在群里告诉我一声，我补进去。
@@ -620,14 +537,14 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
       }}
       style={{ background: C.card, borderRadius: 14, border: "1px solid " + (dragOver ? C.accent : C.line), padding: "18px 16px" }}
     >
-      <div style={{ fontSize: 15, fontWeight: 600, color: C.dark, marginBottom: 4 }}>
-        {teacher ? "替学生补传一份" : "把答题卡传上来"}
-      </div>
-      <div style={{ fontSize: 12.5, color: C.dim, lineHeight: 1.9, marginBottom: 16 }}>
-        {teacher
-          ? "微信里收到的图片或 PDF 直接拖进来，选好是哪个学生就行。"
-          : "一页一张，分开传。别把几页拼成一张，那样字会糊掉。"}
-      </div>
+      {teacher && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: C.dark, marginBottom: 4 }}>替学生补传一份</div>
+          <div style={{ fontSize: 12.5, color: C.dim, lineHeight: 1.9 }}>
+            微信里收到的图片或 PDF 直接拖进来，选好是哪个学生就行。
+          </div>
+        </div>
+      )}
 
       {loading && <div style={{ fontSize: 13, color: C.dim, padding: "10px 0" }}>正在读取班级名单…</div>}
 
@@ -712,16 +629,11 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
                 ))}
               </div>
             )}
-            {gid && name && !sid && (
-              <div style={{ fontSize: 11.5, color: C.dim, marginTop: 7, lineHeight: 1.8 }}>
-                这个名字是第一次填，会新建一条记录。以后在这台手机上再传，点上面那个名字就行。
-              </div>
-            )}
           </div>
 
           {/* 学校是学生属性，不是班级：一个班里有宝一中、新建路中学好几个学校。
-              必填 —— 同一所学校的统一考试用同一份卷子，将来 AI 分析时能共用一套评分标准；
-              少了这个字段，每份卷子都得从头建标准。 */}
+              必填 —— 同一所学校的统一考试用同一份卷子，将来能共用一套评分标准；
+              少了这个字段，每份卷子都得从头建标准。这一层不向家长解释。 */}
           <div style={{ marginBottom: 12 }}>
             <div style={labelStyle}>孩子学校（必填）</div>
             <input
@@ -737,9 +649,6 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
                 <option key={s} value={s} />
               ))}
             </datalist>
-            <div style={{ fontSize: 11.5, color: C.dim, marginTop: 7, lineHeight: 1.8 }}>
-              填孩子现在读的学校就行，这台手机填过的会自动提示，点一下就好。
-            </div>
           </div>
 
           {gid && (
@@ -764,61 +673,28 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
             </div>
           )}
 
-          <div style={{ marginBottom: 14 }}>
-            <div style={labelStyle}>答题卡（照片或 PDF）</div>
-            <div style={{ fontSize: 11.5, color: C.dim, marginBottom: 8, lineHeight: 1.8 }}>
-              先选你手上是哪一种，我告诉你怎么传最清楚：
+          <div style={{ marginBottom: 16, background: C.soft, border: "1px solid " + C.line, borderRadius: 12, padding: "14px 13px" }}>
+            <div style={{ fontSize: 14.5, fontWeight: 700, color: C.dark, marginBottom: 5 }}>
+              答题卡（照片或 PDF）
             </div>
-            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-              {[
-                ["download", "智学网能下载"],
-                ["shot", "只能截图"],
-                ["photo", "只有纸质卷"]
-              ].map(([k, label]) => (
-                <button
-                  key={k}
-                  onClick={() => setSourceKind(k)}
-                  style={{
-                    flex: 1,
-                    padding: "9px 2px",
-                    fontSize: 11.5,
-                    fontFamily: "inherit",
-                    cursor: "pointer",
-                    borderRadius: 8,
-                    border: "1px solid " + (sourceKind === k ? C.dark : C.line),
-                    background: sourceKind === k ? C.dark : C.soft,
-                    color: sourceKind === k ? C.cream : "#7a6a4a"
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
+            <div style={{ fontSize: 12.5, color: C.dim, marginBottom: 11, lineHeight: 1.8 }}>
+              一页一张，请拍清楚，不要将多页拼成一张。
             </div>
-            {sourceKind && (
-              <div style={{ background: sourceKind === "download" ? "#eaf5e8" : "#fdf3dc", border: "1px solid " + (sourceKind === "download" ? "#b8d8a8" : "#e8c870"), borderRadius: 8, padding: "9px 12px", marginBottom: 10, fontSize: 11.5, color: sourceKind === "download" ? "#3a6a3a" : "#7a5a20", lineHeight: 1.9 }}>
-                {sourceKind === "download" && <>在智学网点「下载原卷」，把文件传上来。有 PDF 就传 PDF，一页一份最好。</>}
-                {sourceKind === "shot" && <>把原卷放大后<strong>一页一张截图</strong>，千万别整份缩到一屏——那样每页只剩两三百像素，看不出孩子错在哪一步。</>}
-                {sourceKind === "photo" && <><strong>一张只拍一页。</strong>光线足、拍正、四个角都进画面，老师打的叉别挡住。六到八页就分六到八次传。</>}
-              </div>
-            )}
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 onClick={() => camRef.current?.click()}
                 disabled={!!busy || shots.length >= MAX_SHOTS}
-                style={{ flex: 1, background: C.accent, border: "none", color: "#3a2a10", borderRadius: 10, padding: "13px 0", fontSize: 14, fontWeight: 600, cursor: shots.length >= MAX_SHOTS || busy ? "not-allowed" : "pointer", opacity: shots.length >= MAX_SHOTS || busy ? 0.5 : 1, fontFamily: "inherit" }}
+                style={{ flex: 1, background: C.accent, border: "none", color: "#3a2a10", borderRadius: 10, padding: "14px 0", fontSize: 14.5, fontWeight: 600, cursor: shots.length >= MAX_SHOTS || busy ? "not-allowed" : "pointer", opacity: shots.length >= MAX_SHOTS || busy ? 0.5 : 1, fontFamily: "inherit" }}
               >
                 📷 拍照
               </button>
               <button
                 onClick={() => fileRef.current?.click()}
                 disabled={!!busy || shots.length >= MAX_SHOTS}
-                style={{ flex: 1, background: C.soft, border: "1px solid " + C.line, color: "#5a4a30", borderRadius: 10, padding: "13px 0", fontSize: 14, cursor: shots.length >= MAX_SHOTS || busy ? "not-allowed" : "pointer", opacity: shots.length >= MAX_SHOTS || busy ? 0.5 : 1, fontFamily: "inherit" }}
+                style={{ flex: 1, background: "#fff", border: "1px solid " + C.line, color: "#5a4a30", borderRadius: 10, padding: "14px 0", fontSize: 14.5, cursor: shots.length >= MAX_SHOTS || busy ? "not-allowed" : "pointer", opacity: shots.length >= MAX_SHOTS || busy ? 0.5 : 1, fontFamily: "inherit" }}
               >
                 🖼 相册 / 文件
               </button>
-            </div>
-            <div style={{ fontSize: 11.5, color: "#b0a080", marginTop: 7, lineHeight: 1.8 }}>
-              能下载原卷就传文件；只能看就一页一张截图；只有纸质卷就一张拍一页。按上面选的类型来，最省事也最清楚。
             </div>
             <input
               ref={camRef}
@@ -885,42 +761,36 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
 
             {shots.some((s) => s.strip) && (
               <div style={{ background: "#fdf3dc", border: "1px solid #e8c870", borderRadius: 10, padding: "10px 14px", marginTop: 10, fontSize: 12.5, color: "#7a5a20", lineHeight: 1.9 }}>
-                你选的这张是把好几页拼在一起的
-                {(() => {
-                  const s = shots.find((x) => x.strip);
-                  return s?.srcW ? `（原图宽 ${s.srcW} 像素）` : "";
-                })()}
-                。按八页算，每页只剩两三百像素，手写的步骤会糊成一团，分析不出东西。
-                <b>建议在智学网上点开原卷，双指放大，一页一页截图。</b>
+                这张是多页拼在一起的长图，字会糊，看不清孩子写的步骤。<b>建议一页一张分开传。</b>
               </div>
             )}
           </div>
 
           <div style={{ marginBottom: 14 }}>
-            <div style={labelStyle}>这次考了多少分（可不填）</div>
+            <div style={labelStyle}>这次考试总分（选填）</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input
                 value={score}
                 onChange={(e) => setScore(e.target.value.replace(/[^\d.]/g, ""))}
                 inputMode="decimal"
                 maxLength={6}
-                placeholder="比如 108"
+                placeholder="例如：108"
                 style={{ ...controlStyle, flex: 1, marginBottom: 0 }}
               />
               <span style={{ fontSize: 12, color: C.dim, flexShrink: 0 }}>分</span>
             </div>
             <div style={{ fontSize: 11.5, color: C.dim, marginTop: 7, lineHeight: 1.8 }}>
-              卷子上写的总分。不知道就先空着，以后告诉我也能补。
+              如果答题卡上已经标注总分，无需重复填写。
             </div>
           </div>
 
           <div style={{ marginBottom: 14 }}>
-            <div style={labelStyle}>想跟我说的话（可不填）</div>
+            <div style={labelStyle}>备注（选填）</div>
             <input
               value={note}
               onChange={(e) => setNote(e.target.value)}
               maxLength={200}
-              placeholder="比如：第 22 题他说没做完"
+              placeholder="有什么需要老师特别关注的，可以在这里说明。"
               style={controlStyle}
             />
           </div>
@@ -945,7 +815,7 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
               fontFamily: "inherit"
             }}
           >
-            {busy || "上传答题卡"}
+            {busy || "提交答题卡"}
           </button>
 
           <div style={{ fontSize: 11.5, color: "#b0a080", textAlign: "center", marginTop: 10, lineHeight: 1.8 }}>
