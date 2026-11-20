@@ -829,7 +829,7 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
               目的是让家长/孩子有话可说，而不是面对空白框无从下笔。 */}
           <div style={{ marginBottom: 14 }}>
             <div style={labelStyle}>补充反馈（选填）</div>
-            <div style={{ fontSize: 11.5, color: C.dim, lineHeight: 1.85, marginBottom: 8 }}>
+            <div style={{ fontSize: 12.5, color: C.dim, lineHeight: 1.9, marginBottom: 8 }}>
               除了答题卡上的错题，如果有其他希望老师了解或重点讲解的内容，也可以在这里告诉我。如果方便，也欢迎孩子自己来说说这次考试中遇到的困惑。
             </div>
             <textarea
