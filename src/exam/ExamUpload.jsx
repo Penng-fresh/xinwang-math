@@ -36,6 +36,24 @@ const C = {
   cream: "#f0e8d0"
 };
 
+// 学校用「下拉选 + 其他学校手填」，和上一版独立上传页保持一致。
+// 下拉里放这批固定校名，加这台手机记过的学校，最后一项留给名单外的学校。
+// 走下拉是为了避免「宝一中 / 宝鸡市第一中学」被当成两所学校。
+const OTHER_SCHOOL = "__other__";
+const FIXED_SCHOOLS = [
+  "宝一中", "新建路中学", "新福园中学", "高新中学", "渭滨一校",
+  "金陵中学", "三迪中学", "店子街中学", "铁五处中学",
+  "烽火中学"
+];
+
+// 下拉里已有的学校就选它；不在名单里的，落到「其他学校」并把手填框填上。
+function pickSchool(value, list) {
+  const s = String(value || "").trim();
+  if (!s) return { pick: "", other: "" };
+  if ((list || FIXED_SCHOOLS).indexOf(s) >= 0) return { pick: s, other: "" };
+  return { pick: OTHER_SCHOOL, other: s };
+}
+
 // 这台设备上输过的孩子：[{gid, name, sid, school, at}]，最多存 10 条。
 // 只存在家长自己的手机里，服务端不返回任何名单 —— 所以既要让老家长零打字，
 // 又不能让任何人的名字被别人看见，只能靠这个。
@@ -231,9 +249,10 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
   const [gid, setGid] = useState("");
   const [sid, setSid] = useState("");
   const [name, setName] = useState("");
-  // 孩子读哪所学校：学生属性，不是分组。家长手填，本机记过就带出来。
-  // 必填 —— 将来 AI 按学校复用同一份卷子的评分标准，没有学校字段就得每份卷子重来一遍。
-  const [studentSchool, setStudentSchool] = useState("");
+  // 孩子读哪所学校：学生属性，不是分组。下拉选已有的，名单外的选「其他学校」手填。
+  // 必填 —— 同一所学校的统一考试用同一份卷子，标准能复用。
+  const [schoolPick, setSchoolPick] = useState("");
+  const [schoolOther, setSchoolOther] = useState("");
   const [people, setPeople] = useState([]);
   const [exams, setExams] = useState([]);
   const [examId, setExamId] = useState("");
@@ -281,7 +300,11 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
         setGrade(lastGroup?.grade || "");
         setGid(last.gid);
         setName(last.name);
-        setStudentSchool(last.school || "");
+        {
+          const r = pickSchool(last.school, [...new Set([...FIXED_SCHOOLS, ...list.map((p) => p.school).filter(Boolean)])]);
+          setSchoolPick(r.pick);
+          setSchoolOther(r.other);
+        }
         if (last.sid) setSid(last.sid);
       } catch (e) {
         if (!alive) return;
@@ -353,9 +376,11 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
   const allGroups = (catalog || []).flatMap((s) => s.groups || []);
   const gradeOptions = gradesOf(allGroups);
   const classList = allGroups.filter((g) => !grade || g.grade === grade);
-  // "孩子学校"的候选只从这台设备记过的学生里来。
-  // 不拉全班名单 —— 隐私红线上家长端看不到别的孩子信息。
-  const schoolOptions = [...new Set(people.map((p) => p.school).filter(Boolean))];
+  // 学校下拉 = 固定校名 + 这台设备记过的学校（去重，固定名单在前）。
+  // 不拉全班名单 —— 家长端看不到别的孩子的信息。
+  const schoolOptions = [...new Set([...FIXED_SCHOOLS, ...people.map((p) => p.school).filter(Boolean)])];
+  // 提交用的最终校名：选了「其他学校」就取手填框，否则取下拉值。
+  const studentSchool = (schoolPick === OTHER_SCHOOL ? schoolOther : schoolPick).trim();
   // 这台设备在这个班输过的名字。别的家长的名字永远不会出现在这里 ——
   // 数据只在本地，服务端根本不返回名单。
   const sameGid = gid ? people.filter((p) => p.gid === gid) : [];
@@ -567,7 +592,8 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
                 setGid(firstGroup?.gid || "");
                 setSid("");
                 setName("");
-                setStudentSchool("");
+                setSchoolPick("");
+                setSchoolOther("");
               }}
             >
               {gradeOptions.map((g) => (
@@ -584,7 +610,8 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
               setGid(e.target.value);
               setSid("");
               setName("");
-              setStudentSchool("");
+              setSchoolPick("");
+              setSchoolOther("");
             }}
           >
             {classList.map((g) => (
@@ -611,7 +638,9 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
                     key={p.name}
                     onClick={() => {
                       setName(p.name);
-                      setStudentSchool(p.school || "");
+                      const r = pickSchool(p.school, schoolOptions);
+                      setSchoolPick(r.pick);
+                      setSchoolOther(r.other);
                     }}
                     style={{
                       background: name === p.name ? "#2a2218" : C.soft,
@@ -633,22 +662,34 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
 
           {/* 学校是学生属性，不是班级：一个班里有宝一中、新建路中学好几个学校。
               必填 —— 同一所学校的统一考试用同一份卷子，将来能共用一套评分标准；
-              少了这个字段，每份卷子都得从头建标准。这一层不向家长解释。 */}
+              少了这个字段，每份卷子都得从头建标准。这一层不向家长解释。
+              下拉选已有的，名单外的选「其他学校」手填 —— 避免同一所学校两种叫法被当成两所。 */}
           <div style={{ marginBottom: 12 }}>
-            <div style={labelStyle}>孩子学校（必填）</div>
-            <input
-              list="xw-student-schools"
-              value={studentSchool}
-              onChange={(e) => setStudentSchool(e.target.value)}
-              placeholder="比如：宝一中 / 新建路中学"
-              maxLength={30}
-              style={controlStyle}
-            />
-            <datalist id="xw-student-schools">
+            <Sel
+              label="孩子学校（必填）"
+              value={schoolPick}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSchoolPick(v);
+                if (v !== OTHER_SCHOOL) setSchoolOther("");
+              }}
+            >
+              <option value="">请选择学校</option>
               {schoolOptions.map((s) => (
-                <option key={s} value={s} />
+                <option key={s} value={s}>{s}</option>
               ))}
-            </datalist>
+              <option value={OTHER_SCHOOL}>其他学校（手动填写）</option>
+            </Sel>
+            {schoolPick === OTHER_SCHOOL && (
+              <input
+                value={schoolOther}
+                onChange={(e) => setSchoolOther(e.target.value)}
+                placeholder="填学校全称，比如 宝鸡市第一中学"
+                maxLength={20}
+                autoFocus
+                style={controlStyle}
+              />
+            )}
           </div>
 
           {gid && (
