@@ -786,12 +786,13 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
 
           <div style={{ marginBottom: 14 }}>
             <div style={labelStyle}>备注（选填）</div>
-            <input
+            <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
               maxLength={200}
+              rows={2}
               placeholder="有什么需要老师特别关注的，可以在这里说明。"
-              style={controlStyle}
+              style={{ ...controlStyle, resize: "none", lineHeight: 1.7 }}
             />
           </div>
 

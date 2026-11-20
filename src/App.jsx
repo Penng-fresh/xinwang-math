@@ -838,11 +838,13 @@ export default function App() {
     </>
   );
 
+  // 家长上传页：不挂「教师后台」悬浮按钮，也不给返回按钮。
+  // 悬浮按钮在手机上会压住提交区；「‹ 作业检查」对家长没有意义。
+  // 老师走首页自己的入口进后台。
   if (page === "exam") return (
     <>
       <GlobalStyle />
-      <ExamParent onBack={() => setPage("tool")} />
-      <button onClick={() => setPage("login")} style={{ position: "fixed", bottom: 24, right: 24, background: "rgba(42,34,24,0.85)", color: "#c0b090", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 20, padding: "8px 16px", fontSize: 12, cursor: "pointer", zIndex: 99 }}>教师后台</button>
+      <ExamParent />
     </>
   );
 
