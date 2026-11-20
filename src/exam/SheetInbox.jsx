@@ -14,6 +14,10 @@
 //
 // 列表永远不取图片字节：一份 2000px 的答题卡 base64 有 50 万字符，
 // 20 份就是 10 兆，列表一刷就卡死。点开某一份才取那一张。
+//
+// 取回来的图不再纵向铺满，改成缩略图宫格，点开进 SheetImageViewer 看细节：
+// 以前一份 5 张全尺寸铺下去要滚五屏、还带 15 个按钮，缩略图一屏看完。
+// 看图器里不放置删除按钮 —— 放大拖动的时候最容易误触，原件删了找不回来。
 
 import { useEffect, useMemo, useState } from "react";
 import ExamUpload from "./ExamUpload.jsx";
