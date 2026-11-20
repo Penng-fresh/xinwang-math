@@ -803,6 +803,13 @@ export default function SheetInbox({ password }) {
                       const expanded = openId === sh.id;
                       const withName = { ...sh, studentName: stu.name };
                       const mine = imgs[sh.id];
+                      // 同一场考试传了不止一份时，标出这是第几份。
+                      // 家长重复提交是常事（以为没传上、换张更清楚的），
+                      // 不标出来会被当成重复记录或者脏数据。
+                      const sameExam = sh.examId ? stu.sheets.filter((x) => x.examId === sh.examId) : [];
+                      const dupNo = sameExam.length > 1
+                        ? sameExam.filter((x) => (x.createdAt || 0) < (sh.createdAt || 0)).length + 1
+                        : 0;
                       return (
                         <div key={sh.id} style={{ borderBottom: i === stu.sheets.length - 1 ? "none" : "1px dashed " + C.line, paddingTop: 10 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -812,6 +819,11 @@ export default function SheetInbox({ password }) {
                                 <span style={{ fontSize: 12.5, fontWeight: 600, color: C.dark, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                   {sh.examName || "未指定考试"}
                                 </span>
+                                {dupNo ? (
+                                  <span style={{ background: "#fdf0e0", border: "1px solid #e8d0a0", borderRadius: 6, padding: "0 6px", fontSize: 11, color: "#8a6a30", flexShrink: 0, whiteSpace: "nowrap" }}>
+                                    第 {dupNo} 份
+                                  </span>
+                                ) : null}
                                 {sh.examId && scores[stu.sid + "|" + sh.examId] !== undefined && (
                                   <span
                                     onClick={(e) => {

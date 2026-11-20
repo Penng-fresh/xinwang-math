@@ -437,8 +437,13 @@ export default async function handler(req, res) {
       };
 
       const pipe = [
-        ["SET", K.sheet(id), JSON.stringify(meta)],
+        // 顺序很关键：先落图片分片，最后才写 meta。
+        // pipeline 不是事务，中途某条失败时前面的已经生效。如果 meta 先写，
+        // 库里就会出现「后台看得见一条记录、点开是空的」—— 家长以为交完了，
+        // 我这边其实什么都没收到，等发现已经过了两周原件也找不回来。
+        // 倒过来写，最坏只是留下一份不可见的孤儿图片，后台不会出现假记录。
         ...cmds,
+        ["SET", K.sheet(id), JSON.stringify(meta)],
         ["ZADD", K.sheetIdx(), String(now), id],
         ["ZADD", K.groupSheets(gid), String(now), id],
         ["ZADD", K.studentSheets(sid), String(now), id],
@@ -446,6 +451,26 @@ export default async function handler(req, res) {
       if (exam) pipe.push(["ZADD", K.examSheets(exam.id), String(now), id]);
 
       await redisPipe(pipe);
+
+      // 写完再核一遍分片数：每张图实际存进去的块数，必须等于写之前算好的块数。
+      // 对不上就把这条整个清掉，让家长重传 —— 宁可让他多点一次，
+      // 也不能在后台留一份缺页的卷子。
+      const lens = await redisPipe(images.map((im) => ["LLEN", K.sheetImg(id, im.n)]));
+      const short = images.filter((im, i) => Number(lens[i]) !== im.chunks);
+      if (short.length) {
+        const clean = [
+          ["DEL", K.sheet(id)],
+          ["ZREM", K.sheetIdx(), id],
+          ["ZREM", K.groupSheets(gid), id],
+          ["ZREM", K.studentSheets(sid), id],
+          ...images.map((im) => ["DEL", K.sheetImg(id, im.n)]),
+        ];
+        if (exam) clean.push(["ZREM", K.examSheets(exam.id), id]);
+        await redisPipe(clean);
+        return res.status(500).json({
+          error: "这份没存完整，已经清掉了。请重新提交一次，或者把这几页直接发我微信。",
+        });
+      }
 
       // 自动分析由上传页拿到 id/sid 后另发一个 POST /api/analysis 触发。
       // 不能在这里 fire-and-forget：Vercel 会在响应后冻结函数，后台任务实测没跑。

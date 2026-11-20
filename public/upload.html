@@ -109,14 +109,15 @@
   .tick { width: 54px; height: 54px; line-height: 54px; border-radius: 27px; background: #e8f5e0; color: #3a8a3a; font-size: 27px; margin: 0 auto 14px; }
   .success h2 { margin: 0 0 8px; font-size: 19px; }
   .success p { margin: 0; font-size: 13.5px; color: #5a4a30; }
+  .success .done-note { margin-top: 10px; font-size: 12px; color: #8a7a5a; line-height: 1.7; }
   .again { margin-top: 18px; border: 1px solid #e8d0a0; background: transparent; color: #7a6a4a; border-radius: 20px; padding: 9px 22px; font: inherit; font-size: 13px; cursor: pointer; }
   .foot { text-align: center; font-size: 10.5px; color: #b0a080; margin-top: 18px; }
 </style>
 </head>
 <body>
 <div class="wrap" id="formWrap">
-  <h1>学校考试答题卡上传</h1>
-  <p class="sub">孩子的答题卡只有我一个人看，不会用于任何教学宣传，请放心，无需担心孩子隐私泄露问题。我收这些，是想了解孩子这次的考试情况，重点看看失分点在哪、为什么会错，再据此安排后面的学习建议或者针对性练习。<br><br>后面我还会加上 AI 帮忙分析：您传完就能看到，这份卷子哪些基础题本来不该丢，哪些是压轴难题、可以先放一放。</p>
+  <h1>考试答题卡提交</h1>
+  <p class="sub">这里是交孩子学校考试答题卡的地方。传上来我就能看到孩子这次考得怎么样，重点看失分点在哪、为什么会错，再据此安排后面的学习建议或者针对性练习。<br><br>答题卡只有我一个人看，不会给其他家长看到，请放心，不用担心孩子隐私泄露的问题。以后如果要把孩子的答题卡或者成绩当作教学案例公开，我会先单独征得您的同意。</p>
 
   <div class="card">
     <label for="gid">孩子年级</label>
@@ -126,7 +127,8 @@
     <input id="name" autocomplete="off" placeholder="">
 
     <label for="school">孩子学校</label>
-    <select id="school"><option value="">选孩子读的学校</option></select>
+    <select id="school"><option value="">请选择学校</option></select>
+    <input id="schoolOther" type="text" autocomplete="off" maxlength="20" placeholder="填学校全称，比如 宝鸡市第一中学" style="display:none">
 
     <label for="exam">考试场次</label>
     <select id="exam"><option value="">请选择本次考试</option></select>
@@ -135,29 +137,27 @@
     <input id="score" type="number" inputmode="decimal" min="0" max="200" step="0.5" placeholder="比如 108">
 
     <div class="files-head">
-      <strong>把答题卡传上来</strong>
+      <strong>上传答题卡</strong>
       <div class="file-btns">
-        <button class="mini" type="button" id="pickBtn">从手机里选</button>
+        <button class="mini" type="button" id="pickBtn">从手机相册选</button>
         <button class="mini" type="button" id="camBtn">直接拍</button>
       </div>
     </div>
     <input id="pick" type="file" accept="image/*,application/pdf" multiple hidden>
     <input id="cam" type="file" accept="image/*" capture="environment" hidden>
     <div class="list" id="list"></div>
-    <div class="hint" id="fileHint">一页一张，最多 9 张。一次传不完就分两次，都会算到孩子名下。</div>
+    <div class="hint" id="fileHint">整份都要传，一页一张，最多 9 页。智学网能下原卷就直接传 PDF，单份不超过 2MB。</div>
 
     <label for="note">还有什么想告诉我的（可不填）</label>
     <textarea id="note" rows="3" placeholder="比如这次时间紧、哪些题型希望我讲一下"></textarea>
 
-    <button class="submit" type="button" id="submitBtn">传上去</button>
+    <button class="submit" type="button" id="submitBtn">提交答题卡</button>
     <div class="err" id="err"></div>
   </div>
 
   <div class="notice">
-    <b>几点小提醒</b><br>
-    1. 智学网能下原卷最好，直接传 PDF 或原图。<br>
-    2. 截图的话一页一张，别拼成长图，拼了字会糊。<br>
-    3. 纸质的拍正一点，红笔分数要看得清。
+    <b>怎么传最省事</b><br>
+    智学网能下原卷就传 PDF；截图一页一张，别拼成长图，拼了字会糊；纸质答题卡拍正一点，红笔分数要看得清。
   </div>
   <div class="foot">传好了就不用再发我微信了 · 彭老师</div>
 </div>
@@ -165,9 +165,10 @@
 <div class="wrap" id="doneWrap" style="display:none">
   <div class="success">
     <div class="tick">✓</div>
-    <h2>收到了，我看到了</h2>
+    <h2>已收到</h2>
     <p id="doneText"></p>
-    <button class="again" type="button" id="againBtn">还有一页</button>
+    <p class="done-note" id="doneNote"></p>
+    <button class="again" type="button" id="againBtn">还要传一页</button>
   </div>
 </div>
 
@@ -179,7 +180,7 @@
   var TOTAL_BUDGET = 3200000;
   var PDF_MAX_BYTES = 2 * 1024 * 1024;
   var PEOPLE_KEY = "xw_sheet_people";
-  var CONTACT_SCHOOL = "__contact__";
+  var CONTACT_SCHOOL = "__other__";
   // penng 点名的学校 + 他确认只补这一所烽火中学。
   // "电子街中学"是 penng 笔误，实际就是"店子街中学"，只保留店子街。
   var FIXED_SCHOOLS = [
@@ -190,14 +191,16 @@
 
   var $ = function (id) { return document.getElementById(id); };
   var gidEl = $("gid"), nameEl = $("name"), schoolEl = $("school"), examEl = $("exam");
+  var schoolOtherEl = $("schoolOther");
   var scoreEl = $("score"), noteEl = $("note"), listEl = $("list"), errEl = $("err");
   var pickEl = $("pick"), camEl = $("cam"), submitEl = $("submitBtn"), hintEl = $("fileHint");
-  var formWrap = $("formWrap"), doneWrap = $("doneWrap"), doneText = $("doneText");
+  var formWrap = $("formWrap"), doneWrap = $("doneWrap"), doneText = $("doneText"), doneNote = $("doneNote");
 
   var groups = [];
   var shots = [];
   var busy = false;
   var lastSid = "";
+  var examEmpty = false;
 
   function showErr(msg) {
     errEl.textContent = msg || "";
@@ -254,7 +257,7 @@
     });
     var other = document.createElement("option");
     other.value = CONTACT_SCHOOL;
-    other.textContent = "没有？联系彭老师添加";
+    other.textContent = "其他学校（手动填写）";
     sel.appendChild(other);
   }
 
@@ -294,6 +297,8 @@
 
   function loadExams(gid) {
     examEl.textContent = "";
+    examEmpty = false;
+    showErr("");
     var o0 = document.createElement("option");
     o0.value = "";
     o0.textContent = "请选择本次考试";
@@ -303,7 +308,17 @@
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (x) {
         if (!x.ok) throw new Error(x.d && x.d.error || "考试没读出来，刷新一下");
-        (x.d.exams || []).forEach(function (e) {
+        var list = x.d.exams || [];
+        if (!list.length) {
+          examEmpty = true;
+          var oe = document.createElement("option");
+          oe.value = "";
+          oe.textContent = "这个年级暂时没有可选的考试";
+          examEl.appendChild(oe);
+          showErr("这个年级还没有开放考试的场次。先别传，联系彭老师确认这次考的是哪一场。");
+          return;
+        }
+        list.forEach(function (e) {
           var o = document.createElement("option");
           o.value = e.id;
           o.textContent = e.name + (e.date ? " · " + e.date : "");
@@ -460,15 +475,23 @@
     } finally {
       busy = false;
       submitEl.disabled = false;
-      submitEl.textContent = "传上去";
+      submitEl.textContent = "提交答题卡";
     }
+  }
+
+  function schoolValue() {
+    if (schoolEl.value === CONTACT_SCHOOL) return schoolOtherEl.value.replace(/\s+/g, "").trim();
+    return schoolEl.value.trim();
   }
 
   function validate() {
     if (!gidEl.value) return "先选孩子读几年级";
     if (!nameEl.value.trim()) return "写一下孩子姓名";
     if (!schoolEl.value) return "先选孩子的学校";
-    if (schoolEl.value === CONTACT_SCHOOL) return "名单里没有的话，先联系彭老师加上学校，再回来传";
+    if (schoolEl.value === CONTACT_SCHOOL && !schoolOtherEl.value.trim()) {
+      return "选了其他学校，请把学校名称填上再提交";
+    }
+    if (examEmpty) return "这个年级还没有开放考试的场次，先联系彭老师确认这次考哪一场";
     if (!examEl.value) return "先选这次是哪场考试";
     if (!shots.length) return "还没选答题卡照片";
     if (scoreEl.value.trim()) {
@@ -485,12 +508,12 @@
     showErr("");
     busy = true;
     submitEl.disabled = true;
-    submitEl.textContent = "正在传，别关页面…";
+    submitEl.textContent = "正在上传，别关页面…";
     var payload = {
       gid: gidEl.value,
       examId: examEl.value,
       studentName: nameEl.value.trim(),
-      studentSchool: schoolEl.value.trim(),
+      studentSchool: schoolValue(),
       note: noteEl.value.trim(),
       source: "parent",
       images: shots.map(function (s) { return { data: s.data, mediaType: s.kind === "pdf" ? "application/pdf" : "image/jpeg" }; })
@@ -516,28 +539,65 @@
           scoreSaved = sr.ok && !!sd.ok;
         } catch (e) {}
       }
-      savePerson({ gid: gidEl.value, name: d.studentName || nameEl.value.trim(), sid: d.sid || "", school: schoolEl.value.trim() });
+      savePerson({ gid: gidEl.value, name: d.studentName || nameEl.value.trim(), sid: d.sid || "", school: schoolValue() });
       lastSid = d.sid || "";
       doneText.textContent = (d.studentName || nameEl.value.trim()) +
         (d.examName ? " · " + d.examName : "") + " · " + (d.imageCount || shots.length) + " 份" +
         (scoreWanted && !scoreSaved ? "（分数没记上，我后面补）" : "");
+      doneNote.textContent = "正在后台核对…";
+      doneNote.style.color = "#8a7a5a";
       formWrap.style.display = "none";
       doneWrap.style.display = "block";
       window.scrollTo(0, 0);
+      verifyReceived(d);
     } catch (e) {
-      showErr(e.message || "没传上去，看看网络再点一次");
+      showErr((e.message || "没传上去") + "。选好的照片还在，检查一下网络，再点一次提交就行");
     } finally {
       busy = false;
       submitEl.disabled = false;
-      submitEl.textContent = "传上去";
+      submitEl.textContent = "提交答题卡";
     }
+  }
+
+  // 只看接口返回 ok 不够 —— 万一后台只存了一半，家长以为交完了、我这边是空的，
+  // 等发现已经过去两周。所以再查一次这个学生的记录，确认这一份真的在库里。
+  function verifyReceived(d) {
+    if (!d || !d.id || !d.sid) {
+      doneNote.textContent = "没拿到回执编号，麻烦把这几页直接发我微信再确认一下。";
+      doneNote.style.color = "#a03030";
+      return;
+    }
+    fetch("/api/answer-sheets?view=mine&sid=" + encodeURIComponent(d.sid), { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (x) {
+        var hit = (x.sheets || []).some(function (s) { return s.id === d.id; });
+        if (hit) {
+          doneNote.textContent = "后台已经确认收到这一份了，不用再发一遍。";
+          doneNote.style.color = "#3a8a3a";
+        } else {
+          doneNote.textContent = "后台没查到这一份，可能没传完整。请再点一次提交，或者把这几页直接发我微信。";
+          doneNote.style.color = "#a03030";
+        }
+      })
+      .catch(function () {
+        doneNote.textContent = "网络有点问题，没核对上。如果我在群里没回应，您再发我一声。";
+        doneNote.style.color = "#8a7a5a";
+      });
   }
 
   gidEl.addEventListener("change", function () {
     nameEl.value = "";
     schoolEl.value = "";
+    schoolOtherEl.value = "";
+    schoolOtherEl.style.display = "none";
     lastSid = "";
     loadExams(gidEl.value);
+  });
+  schoolEl.addEventListener("change", function () {
+    var isOther = schoolEl.value === CONTACT_SCHOOL;
+    schoolOtherEl.style.display = isOther ? "block" : "none";
+    schoolOtherEl.value = "";
+    if (isOther) setTimeout(function () { schoolOtherEl.focus(); }, 40);
   });
   $("pickBtn").addEventListener("click", function () { pickEl.click(); });
   $("camBtn").addEventListener("click", function () { camEl.click(); });
