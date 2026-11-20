@@ -825,16 +825,37 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
             </div>
           </div>
 
+          {/* 补充反馈：仍然是一个自由填写框，不拆成必填问卷，也不改 note 字段。
+              目的是让家长/孩子有话可说，而不是面对空白框无从下笔。 */}
           <div style={{ marginBottom: 14 }}>
-            <div style={labelStyle}>备注（选填）</div>
+            <div style={labelStyle}>补充反馈（选填）</div>
+            <div style={{ fontSize: 11.5, color: C.dim, lineHeight: 1.85, marginBottom: 8 }}>
+              除了答题卡上的错题，如果有其他希望老师了解或重点讲解的内容，也可以在这里告诉我。如果方便，也欢迎孩子自己来说说这次考试中遇到的困惑。
+            </div>
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
               maxLength={200}
-              rows={2}
-              placeholder="有什么需要老师特别关注的，可以在这里说明。"
+              rows={3}
+              placeholder="可以写下题号、具体困惑，或者其他想反馈给老师的情况……"
               style={{ ...controlStyle, resize: "none", lineHeight: 1.7 }}
             />
+            <div style={{ fontSize: 11.5, color: C.dim, lineHeight: 1.85, marginTop: 8 }}>
+              可以参考这几个方面，写其中几条就行：
+              <div style={{ marginTop: 3 }}>
+                · 哪些题完全没有思路，或者题型没见过
+                <br />
+                · 老师讲过也练过，考试时又想不起来怎么做
+                <br />
+                · 有思路但算错了，或者做完不确定对不对
+                <br />
+                · 希望课上重点讲哪几道题
+                <br />
+                · 时间不够用，或者审题看漏了条件
+                <br />
+                · 平时反复出现、一直没改掉的问题
+              </div>
+            </div>
           </div>
 
           {err && (
