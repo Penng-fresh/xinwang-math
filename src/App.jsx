@@ -792,7 +792,16 @@ function TeacherView({ onLogout, password }) {
 //  主入口 - 路由控制
 // ══════════════════════════════════════════════════
 export default function App() {
-  const [page, setPage] = useState("tool"); // home | tool | login | teacher（默认直接进入批改功能，首页暂不展示）
+  // home | tool | login | teacher | exam（默认直接进入批改功能，首页暂不展示）
+  // ?page=exam 是答题卡上传的直达入口：/upload.html 跳到这里，家长不用先点「作业批改」再找按钮。
+  // 保留 query 是为了家长中途刷新还能停在上传页，不会被弹回作业批改。
+  const [page, setPage] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).get("page") === "exam" ? "exam" : "tool";
+    } catch (e) {
+      return "tool";
+    }
+  });
   const [pwInput, setPwInput] = useState("");
   const [pwError, setPwError] = useState("");
   const [pwChecking, setPwChecking] = useState(false);
