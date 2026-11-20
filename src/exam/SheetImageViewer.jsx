@@ -184,8 +184,15 @@ export default function SheetImageViewer({ items, index = 0, title = "", onClose
       const img = imgRef.current;
       const stage = stageRef.current;
       setView((v) => {
-        const limX = img && stage ? Math.max(0, (img.offsetWidth * v.scale - stage.clientWidth) / 2) : 0;
-        const limY = img && stage ? Math.max(0, (img.offsetHeight * v.scale - stage.clientHeight) / 2) : 0;
+        // 图片是 object-fit: contain 铺满容器的，实际显示尺寸得按原图比例算，
+        // 直接拿 offsetWidth 会把容器尺寸当成图片尺寸，边界就不对了。
+        let limX = 0;
+        let limY = 0;
+        if (img && stage && img.naturalWidth && img.naturalHeight) {
+          const fit = Math.min(stage.clientWidth / img.naturalWidth, stage.clientHeight / img.naturalHeight);
+          limX = Math.max(0, (img.naturalWidth * fit * v.scale - stage.clientWidth) / 2);
+          limY = Math.max(0, (img.naturalHeight * fit * v.scale - stage.clientHeight) / 2);
+        }
         return { scale: v.scale, x: clamp(d.x + dx, -limX, limX), y: clamp(d.y + dy, -limY, limY) };
       });
     }
@@ -317,8 +324,11 @@ export default function SheetImageViewer({ items, index = 0, title = "", onClose
               alt={"第 " + (cur + 1) + " 张"}
               draggable={false}
               style={{
-                maxWidth: "100%",
-                maxHeight: "100%",
+                // 用 100% + contain，不用 maxWidth/maxHeight：img 是 flex 子项，
+                // max-height 百分比在 Flexbox 里会失效，长图会被纵向裁掉一截。
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
                 display: "block",
                 userSelect: "none",
                 WebkitUserDrag: "none",
