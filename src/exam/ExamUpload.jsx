@@ -859,10 +859,6 @@ export default function ExamUpload({ mode = "parent", onUploaded }) {
           >
             {busy || "提交答题卡"}
           </button>
-
-          <div style={{ fontSize: 11.5, color: "#b0a080", textAlign: "center", marginTop: 10, lineHeight: 1.8 }}>
-            照片只用来看孩子的这份卷子，不外传
-          </div>
         </>
       )}
     </div>
