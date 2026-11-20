@@ -17,6 +17,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import ExamUpload from "./ExamUpload.jsx";
+import SheetImageViewer from "./SheetImageViewer.jsx";
 
 const C = {
   dark: "#2a2218",
@@ -278,42 +279,93 @@ function kindText(s) {
 
 // 展开后的一组图片（或 PDF）。两个视角共用同一段渲染，
 // 免得改一处忘一处——上一版这里就分叉过一次。
-function SheetImages({ sheet, data, busy, onRemove }) {
+//
+// 图片改成缩略图宫格 + 全屏看图器。以前是全尺寸纵向铺开：一份 5 张、
+// 每张 2000px 高，要滚五屏，还带 15 个按钮。缩略图一屏看完，点开再放大看细节。
+// 含 PDF 的那一份整份走老路子——PDF 进不了 <img>，也不在本次改造范围。
+function SheetImages({ sheet, data, busy, onRemove, onOpen }) {
   if (busy) return <div style={{ fontSize: 12.5, color: C.dim, padding: "12px 0" }}>正在取图…</div>;
   if (!data) return null;
   if (data.error) return <div style={{ fontSize: 12.5, color: C.danger, padding: "12px 0" }}>⚠ {data.error}</div>;
   if (!Array.isArray(data)) return null;
 
-  return data.map((im, i) => {
-    const isPdf = im.mediaType === "application/pdf";
-    const href = isPdf ? im.blobUrl : im.dataUrl;
-    const fileName = `${sheet.studentName || "答题卡"}-${sheet.examName || "未指定考试"}-${i + 1}.${isPdf ? "pdf" : "jpg"}`;
-    return (
-      <div key={i} style={{ marginTop: 12 }}>
-        {isPdf ? (
-          <div style={{ border: "1px solid " + C.line, background: C.soft, borderRadius: 8, padding: "14px", textAlign: "center" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#b04a30", letterSpacing: 1 }}>PDF</div>
-            <div style={{ fontSize: 11.5, color: C.dim, marginTop: 4, lineHeight: 1.8 }}>PDF 不能直接预览，点「打开」用浏览器看</div>
-          </div>
-        ) : (
-          <img src={im.dataUrl} alt={"第" + (i + 1) + "页"} style={{ width: "100%", borderRadius: 8, border: "1px solid " + C.line, display: "block", background: "#fff" }} />
-        )}
-        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-          <a href={href} target="_blank" rel="noreferrer" style={{ flex: 1, textAlign: "center", background: C.dark, color: C.cream, borderRadius: 9, padding: "9px 0", fontSize: 12.5, textDecoration: "none" }}>
-            {isPdf ? "打开" : "看原图"}
-          </a>
-          <a href={href} download={fileName} style={{ flex: 1, textAlign: "center", background: C.soft, border: "1px solid " + C.line, color: "#7a6a4a", borderRadius: 9, padding: "9px 0", fontSize: 12.5, textDecoration: "none" }}>
-            下载
-          </a>
-          {onRemove && (
-            <button onClick={onRemove} style={{ background: "transparent", border: "1px solid #e0a0a0", color: C.danger, borderRadius: 9, padding: "9px 14px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>
-              删除
-            </button>
+  const hasPdf = data.some((im) => im.mediaType === "application/pdf");
+
+  if (hasPdf) {
+    return data.map((im, i) => {
+      const isPdf = im.mediaType === "application/pdf";
+      const href = isPdf ? im.blobUrl : im.dataUrl;
+      const fileName = `${sheet.studentName || "答题卡"}-${sheet.examName || "未指定考试"}-${i + 1}.${isPdf ? "pdf" : "jpg"}`;
+      return (
+        <div key={i} style={{ marginTop: 12 }}>
+          {isPdf ? (
+            <div style={{ border: "1px solid " + C.line, background: C.soft, borderRadius: 8, padding: "14px", textAlign: "center" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#b04a30", letterSpacing: 1 }}>PDF</div>
+              <div style={{ fontSize: 11.5, color: C.dim, marginTop: 4, lineHeight: 1.8 }}>PDF 不能直接预览，点「打开」用浏览器看</div>
+            </div>
+          ) : (
+            <img src={im.dataUrl} alt={"第" + (i + 1) + "页"} style={{ width: "100%", borderRadius: 8, border: "1px solid " + C.line, display: "block", background: "#fff" }} />
           )}
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <a href={href} target="_blank" rel="noreferrer" style={{ flex: 1, textAlign: "center", background: C.dark, color: C.cream, borderRadius: 9, padding: "9px 0", fontSize: 12.5, textDecoration: "none" }}>
+              {isPdf ? "打开" : "看原图"}
+            </a>
+            <a href={href} download={fileName} style={{ flex: 1, textAlign: "center", background: C.soft, border: "1px solid " + C.line, color: "#7a6a4a", borderRadius: 9, padding: "9px 0", fontSize: 12.5, textDecoration: "none" }}>
+              下载
+            </a>
+            {onRemove && (
+              <button onClick={onRemove} style={{ background: "transparent", border: "1px solid #e0a0a0", color: C.danger, borderRadius: 9, padding: "9px 14px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>
+                删除
+              </button>
+            )}
+          </div>
         </div>
+      );
+    });
+  }
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(104px, 1fr))", gap: 8 }}>
+        {data.map((im, i) => {
+          const fileName = `${sheet.studentName || "答题卡"}-${sheet.examName || "未指定考试"}-${i + 1}.jpg`;
+          return (
+            <div key={i} style={{ border: "1px solid " + C.line, borderRadius: 10, overflow: "hidden", background: "#fff" }}>
+              <button
+                onClick={() => onOpen && onOpen(i)}
+                aria-label={"打开第 " + (i + 1) + " 张"}
+                style={{ display: "block", width: "100%", padding: 0, border: "none", background: C.soft, cursor: "zoom-in", position: "relative", fontFamily: "inherit" }}
+              >
+                <img
+                  src={im.dataUrl}
+                  alt={"第" + (i + 1) + "页"}
+                  style={{ width: "100%", height: 132, objectFit: "contain", display: "block" }}
+                />
+                {data.length > 1 && (
+                  <span style={{ position: "absolute", left: 4, top: 4, background: "rgba(42,34,24,0.72)", color: C.cream, fontSize: 10.5, lineHeight: 1, padding: "3px 5px", borderRadius: 5 }}>
+                    {i + 1}
+                  </span>
+                )}
+              </button>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 6px", borderTop: "1px solid " + C.line, background: "#fff" }}>
+                <span style={{ fontSize: 10.5, color: C.dim }}>第 {i + 1} 页</span>
+                <a href={im.dataUrl} download={fileName} style={{ fontSize: 10.5, color: C.muted, textDecoration: "none" }}>
+                  下载
+                </a>
+              </div>
+            </div>
+          );
+        })}
       </div>
-    );
-  });
+      {onRemove && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+          <button onClick={onRemove} style={{ background: "transparent", border: "1px solid #e0a0a0", color: C.danger, borderRadius: 9, padding: "7px 16px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            删除
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // 一次把当前列表里所有答题卡的分析状态取回来，展开时直接用。
@@ -349,6 +401,9 @@ export default function SheetInbox({ password }) {
   const [imgs, setImgs] = useState({}); // id -> [{dataUrl}] 或 {error}
   const [scores, setScores] = useState({}); // sid|examId -> 分数
   const [imgBusy, setImgBusy] = useState("");
+  // 全屏看图器：{ sheetId, index, title }。只在纯图片的答题卡上打开，
+  // 含 PDF 的走原来的「打开」按钮，不进来。
+  const [viewer, setViewer] = useState(null);
   const [analyses, setAnalyses] = useState({}); // sheet id -> AI 分析状态/报告
   const [rerunBusy, setRerunBusy] = useState("");
 
@@ -862,7 +917,13 @@ export default function SheetInbox({ password }) {
                                 busy={rerunBusy === sh.id}
                                 onRetry={() => rerunAnalysis(sh)}
                               />
-                              <SheetImages sheet={withName} data={mine} busy={imgBusy === sh.id} onRemove={(e) => remove(withName, e)} />
+                              <SheetImages
+                                sheet={withName}
+                                data={mine}
+                                busy={imgBusy === sh.id}
+                                onRemove={(e) => remove(withName, e)}
+                                onOpen={(i) => setViewer({ sheetId: sh.id, index: i, title: `${withName.studentName || "未署名"} · ${withName.examName || "未指定考试"}` })}
+                              />
                             </div>
                           )}
                         </div>
@@ -942,12 +1003,29 @@ export default function SheetInbox({ password }) {
                     busy={rerunBusy === s.id}
                     onRetry={() => rerunAnalysis(s)}
                   />
-                  <SheetImages sheet={s} data={mine} busy={imgBusy === s.id} onRemove={(e) => remove(s, e)} />
+                  <SheetImages
+                    sheet={s}
+                    data={mine}
+                    busy={imgBusy === s.id}
+                    onRemove={(e) => remove(s, e)}
+                    onOpen={(i) => setViewer({ sheetId: s.id, index: i, title: `${s.studentName || "未署名"} · ${s.examName || "未指定考试"}` })}
+                  />
                 </div>
               )}
             </div>
           );
         })
+      )}
+
+      {/* 全屏看图器。浮层挂在 body 上，列表 DOM 不卸载，
+          所以关掉之后还停在原来那个滚动位置。删除不进来，避免看图时误触。 */}
+      {viewer && (
+        <SheetImageViewer
+          items={(imgs[viewer.sheetId] || []).filter((d) => d && d.mediaType !== "application/pdf")}
+          index={viewer.index}
+          title={viewer.title}
+          onClose={() => setViewer(null)}
+        />
       )}
     </div>
   );
