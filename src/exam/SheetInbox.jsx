@@ -480,20 +480,24 @@ export default function SheetInbox({ password }) {
       } catch (_) {}
 
       // 分数不混在答题卡列表里：一场可能传三页，分只有一条。
-      // 这里把当前筛选下能用到的分一次取回来，展开学生时直接用。
-      // 存 {score, source}：source 是 parent 就是家长上传时自己填的，
-      // 老师用 ✎ 改过会变成 teacher —— 两者不能混着标「家长填」。
+      //
+      // 后端 ?view=exam 只认单个 examId，一次只回一场的分。以前这里图省事
+      // 只在「选了某一场」时才带 examId，没选就发了个不带参数的请求，
+      // 后端 400 回来，scores 永远是空 —— 列表上就一个分都看不到，
+      // 只能点开卷子自己找。现在按当前列表里出现的考试去重后并发取，
+      // 有几场就几个请求（通常 1-3 个），再合成一张 sid|examId 表。
       try {
-        const sq = fe ? "&examId=" + encodeURIComponent(fe) : "";
-        const sr = await fetch(`/api/scores?view=exam${sq}&password=` + encodeURIComponent(password));
-        const sd = await sr.json().catch(() => ({}));
-        if (sr.ok && Array.isArray(sd.scores)) {
-          const map = {};
-          sd.scores.forEach((x) => {
-            map[x.sid + "|" + x.examId] = { score: x.score, source: x.source || "parent" };
-          });
-          setScores(map);
-        }
+        const examIds = [...new Set(rows.map((x) => x.examId).filter(Boolean))];
+        const got = await Promise.all(examIds.map(async (id) => {
+          const sr = await fetch(`/api/scores?view=exam&examId=${encodeURIComponent(id)}&password=` + encodeURIComponent(password));
+          const sd = await sr.json().catch(() => ({}));
+          return sr.ok && Array.isArray(sd.scores) ? sd.scores : [];
+        }));
+        const map = {};
+        got.flat().forEach((x) => {
+          map[x.sid + "|" + x.examId] = { score: x.score, source: x.source || "parent" };
+        });
+        setScores(map);
       } catch (_) {}
 
       // 卷面满分不另取一次：上面那个 exams 列表里已经带 totalScore 了，
