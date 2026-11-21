@@ -917,6 +917,13 @@ export default function SheetInbox({ password }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                       <span style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{stu.name || "未署名"}</span>
+                      {/* 分数跟在名字后面，不塞到右边跟「查历次」抢位置 ——
+                          手机上右边一挤，下面那行「交了 N 次 · 最近…」就会被截断。 */}
+                      <ScoreBadge
+                        entry={stu.sheets[0] && stu.sheets[0].examId ? scores[stu.sid + "|" + stu.sheets[0].examId] : null}
+                        full={stu.sheets[0] ? examFull[stu.sheets[0].examId] : undefined}
+                        blank={false}
+                      />
                       <span style={{ fontSize: 11.5, color: C.dim }}>{classLabel(stu)}</span>
                     </div>
                     <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -924,11 +931,6 @@ export default function SheetInbox({ password }) {
                       {stu.lastExam ? " · " + stu.lastExam : " · 未指定考试"}
                     </div>
                   </div>
-                  <ScoreBadge
-                    entry={stu.sheets[0] && stu.sheets[0].examId ? scores[stu.sid + "|" + stu.sheets[0].examId] : null}
-                    full={stu.sheets[0] ? examFull[stu.sheets[0].examId] : undefined}
-                    blank={false}
-                  />
                   <span style={{ color: "#b0a080", fontSize: 11, flexShrink: 0 }}>{open ? "收起" : "查历次"}</span>
                 </div>
 
