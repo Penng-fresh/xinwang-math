@@ -281,6 +281,46 @@ function kindText(s) {
   return `${s.imageCount || 0} 张`;
 }
 
+// 分数徽标。老师第一眼要知道「这孩子这次多少分」，不该先点开图、再去卷子上找。
+//
+// 必须写清是谁填的：家长上传时自己在框里报的分，跟以后 AI 从卷面读出来的分
+// 不是一回事。两个都标成「总分」，早晚有一天会拿错的那个去跟家长说话。
+// 满分只在这个考试配了卷子结构时才有，没有就不写，不按 100/120 去猜。
+function ScoreBadge({ entry, full, onEdit, blank = true }) {
+  const hasScore = entry && entry.score !== undefined && entry.score !== null && entry.score !== "";
+  if (!hasScore) {
+    if (!blank) return null;
+    return (
+      <span style={{ fontSize: 11, color: "#b0a080", flexShrink: 0, whiteSpace: "nowrap" }} title="家长上传时没填总分">
+        总分未填
+      </span>
+    );
+  }
+  const who = entry.source === "teacher" ? "老师改" : "家长填";
+  const tip = entry.source === "teacher" ? "老师改过的分数" : "家长上传答题卡时自己填的总分，不是 AI 识别结果";
+  return (
+    <span
+      onClick={onEdit ? (e) => { e.stopPropagation(); onEdit(entry.score); } : undefined}
+      title={tip + (onEdit ? "；点一下可改" : "")}
+      style={{
+        background: "#e8f5e8",
+        border: "1px solid #a8d0a8",
+        borderRadius: 6,
+        padding: "1px 6px",
+        fontSize: 11,
+        color: C.good,
+        flexShrink: 0,
+        whiteSpace: "nowrap",
+        cursor: onEdit ? "pointer" : "default"
+      }}
+    >
+      {who} {entry.score}
+      {full ? <span style={{ color: "#6a9a6a" }}> / {full}</span> : null}
+      {onEdit ? " ✎" : ""}
+    </span>
+  );
+}
+
 // 展开后的一组图片（或 PDF）。两个视角共用同一段渲染，
 // 免得改一处忘一处——上一版这里就分叉过一次。
 //
@@ -403,7 +443,7 @@ export default function SheetInbox({ password }) {
   const [openSid, setOpenSid] = useState(""); // 按学生视角里展开的那个学生
   const [showUpload, setShowUpload] = useState(false);
   const [imgs, setImgs] = useState({}); // id -> [{dataUrl}] 或 {error}
-  const [scores, setScores] = useState({}); // sid|examId -> 分数
+  const [scores, setScores] = useState({}); // sid|examId -> { score, source }
   const [imgBusy, setImgBusy] = useState("");
   // 全屏看图器：{ sheetId, index, title }。只在纯图片的答题卡上打开，
   // 含 PDF 的走原来的「打开」按钮，不进来。
@@ -441,6 +481,8 @@ export default function SheetInbox({ password }) {
 
       // 分数不混在答题卡列表里：一场可能传三页，分只有一条。
       // 这里把当前筛选下能用到的分一次取回来，展开学生时直接用。
+      // 存 {score, source}：source 是 parent 就是家长上传时自己填的，
+      // 老师用 ✎ 改过会变成 teacher —— 两者不能混着标「家长填」。
       try {
         const sq = fe ? "&examId=" + encodeURIComponent(fe) : "";
         const sr = await fetch(`/api/scores?view=exam${sq}&password=` + encodeURIComponent(password));
@@ -448,11 +490,14 @@ export default function SheetInbox({ password }) {
         if (sr.ok && Array.isArray(sd.scores)) {
           const map = {};
           sd.scores.forEach((x) => {
-            map[x.sid + "|" + x.examId] = x.score;
+            map[x.sid + "|" + x.examId] = { score: x.score, source: x.source || "parent" };
           });
           setScores(map);
         }
       } catch (_) {}
+
+      // 卷面满分不另取一次：上面那个 exams 列表里已经带 totalScore 了，
+      // 直接用（见 examFull）。没配卷子结构就是 0，那就只显示分数，不猜满分。
     } catch (e) {
       setErr(e.message || "读取失败");
       setStudents([]);
@@ -523,6 +568,18 @@ export default function SheetInbox({ password }) {
     }, 6000);
     return () => clearTimeout(t);
   }, [analyses, password]);
+
+  // examId -> 卷面满分。取自考试里配的卷子结构（exams[].totalScore），
+  // 没配卷子结构就是 0，这个映射里就不出现 —— 显示层据此决定要不要写「/ 120」。
+  // 家长上传页只有「这次考试总分」一个框，本身没有满分这一项，所以不另开字段。
+  const examFull = useMemo(() => {
+    const m = {};
+    (exams || []).forEach((e) => {
+      const n = Number(e.totalScore || 0);
+      if (n > 0) m[e.id] = n;
+    });
+    return m;
+  }, [exams]);
 
   // 两个视角各有一份数据，缺交判断要跟着当前视角走 ——
   // 只认 students 的话，切到「按提交」再换班级，算的是旧班的人。
@@ -620,10 +677,20 @@ export default function SheetInbox({ password }) {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d?.error || "改分失败");
-      setScores((cur) => ({ ...cur, [sid + "|" + examId]: value }));
+      // 老师改过就记成 teacher，徽标上不再写「家长填」——
+      // 改完还写着家长填，下次自己都分不清这个数是谁给的。
+      setScores((cur) => ({ ...cur, [sid + "|" + examId]: { score: value, source: "teacher" } }));
     } catch (e) {
       alert("改分失败：" + (e.message || "网络问题"));
     }
+  };
+
+  // 改分入口：两个视角共用，免得 prompt 文案两处写得不一样。
+  const editScore = (sid, examId, examName, cur) => {
+    const next = window.prompt(`${examName || "这场考试"} 的分数`, String(cur));
+    if (next === null) return;
+    if (!/^\d{1,3}(\.\d)?$/.test(next.trim())) return alert("填数字，比如 108 或 108.5");
+    saveScore(sid, examId, Number(next));
   };
 
   // 改挂考试：家长传的时候没选考试，这里补上，否则按考试筛永远看不到这一份
@@ -853,6 +920,11 @@ export default function SheetInbox({ password }) {
                       {stu.lastExam ? " · " + stu.lastExam : " · 未指定考试"}
                     </div>
                   </div>
+                  <ScoreBadge
+                    entry={stu.sheets[0] && stu.sheets[0].examId ? scores[stu.sid + "|" + stu.sheets[0].examId] : null}
+                    full={stu.sheets[0] ? examFull[stu.sheets[0].examId] : undefined}
+                    blank={false}
+                  />
                   <span style={{ color: "#b0a080", fontSize: 11, flexShrink: 0 }}>{open ? "收起" : "查历次"}</span>
                 </div>
 
@@ -883,21 +955,13 @@ export default function SheetInbox({ password }) {
                                     第 {dupNo} 份
                                   </span>
                                 ) : null}
-                                {sh.examId && scores[stu.sid + "|" + sh.examId] !== undefined && (
-                                  <span
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const next = window.prompt(`${stu.name} · ${sh.examName} 的分数`, String(scores[stu.sid + "|" + sh.examId]));
-                                      if (next === null) return;
-                                      if (!/^\d{1,3}(\.\d)?$/.test(next.trim())) return alert("填数字，比如 108 或 108.5");
-                                      saveScore(stu.sid, sh.examId, Number(next));
-                                    }}
-                                    style={{ background: "#e8f5e8", border: "1px solid #a8d0a8", borderRadius: 6, padding: "0 6px", fontSize: 11, color: C.good, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}
-                                    title="点一下改分"
-                                  >
-                                    {scores[stu.sid + "|" + sh.examId]} 分 ✎
-                                  </span>
-                                )}
+                                {sh.examId ? (
+                                  <ScoreBadge
+                                    entry={scores[stu.sid + "|" + sh.examId]}
+                                    full={examFull[sh.examId]}
+                                    onEdit={(cur) => editScore(stu.sid, sh.examId, sh.examName, cur)}
+                                  />
+                                ) : null}
                                 <AnalysisBadge analysis={analyses[sh.id]} hasExam={!!sh.examId} />
                               </div>
                               <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
@@ -916,7 +980,7 @@ export default function SheetInbox({ password }) {
                             <div style={{ paddingBottom: 6 }}>
                               <AnalysisReport
                                 sheet={withName}
-                                manualScore={scores[stu.sid + "|" + sh.examId]}
+                                manualScore={scores[stu.sid + "|" + sh.examId]?.score}
                                 analysis={analyses[sh.id]}
                                 busy={rerunBusy === sh.id}
                                 onRetry={() => rerunAnalysis(sh)}
@@ -970,10 +1034,15 @@ export default function SheetInbox({ password }) {
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{s.studentName}</span>
                     <span style={{ fontSize: 11.5, color: C.dim }}>{classLabel(s)}</span>
+                    <ScoreBadge
+                      entry={s.examId ? scores[s.sid + "|" + s.examId] : null}
+                      full={examFull[s.examId]}
+                      onEdit={s.examId ? (cur) => editScore(s.sid, s.examId, s.examName, cur) : undefined}
+                    />
                     <AnalysisBadge analysis={analyses[s.id]} hasExam={!!s.examId} />
                   </div>
                   <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {s.examName || "未指定考试"} · {when(s.createdAt)}
+                    {s.examName || "未指定考试"} · {kindText(s)} · {when(s.createdAt)}
                     {s.source === "teacher" ? " · 你补传的" : ""}
                     {s.note ? " · 留言：" + s.note : ""}
                   </div>
@@ -1002,7 +1071,7 @@ export default function SheetInbox({ password }) {
                   )}
                   <AnalysisReport
                     sheet={s}
-                    manualScore={scores[s.sid + "|" + s.examId]}
+                    manualScore={scores[s.sid + "|" + s.examId]?.score}
                     analysis={analyses[s.id]}
                     busy={rerunBusy === s.id}
                     onRetry={() => rerunAnalysis(s)}
