@@ -11,6 +11,7 @@
 
 import { guardTeacher } from "../lib/auth.js";
 import { K, redisPipe, redisCmd, getJSON, newId } from "../lib/store.js";
+import { visionJSON } from "../lib/ai.js";
 
 const LEVELS = ["base", "mid", "hard"];
 const STATUSES = ["draft", "open", "closed"];
@@ -245,6 +246,79 @@ export default async function handler(req, res) {
         next.updatedAt = Date.now();
         await redisPipe([["SET", K.exam(id), JSON.stringify(next)]]);
         return res.status(200).json({ ok: true, exam: next });
+      }
+
+      // 拍照传试卷智能识别大题结构
+      if (action === "parsePaperImages") {
+        const images = Array.isArray(body.images) ? body.images : [];
+        if (images.length === 0) return res.status(400).json({ error: "请上传试卷图片" });
+        if (images.length > 6) return res.status(400).json({ error: "一次最多上传 6 张试卷图片" });
+
+        const system = `你是一位初中数学资深教研老师。用户会提供真实空白数学考试试卷的照片（通常是1到4页）。
+你的任务：仔细识读整份试卷，提取试卷基本信息与各大题结构，用于后续考试系统建立卷子标准。
+
+严格遵守以下切分与规则：
+1. 试卷标题 (title)：提取卷头名称（如"2026-2027学年第一学期期中考试 七年级数学试题"）。
+2. 全卷满分 (totalScore)：读取卷首标明的总分数字（常见 100、120、150）。如果卷首未标，计算各大题满分之和。
+3. 大题切分标准 (sections)：
+   - 必须以卷面上的一级大题（如 一、选择题；二、填空题；第17题；第18题...）为单位切分，每道大题生成一条记录；
+   - 【重要】大题内部如果包含 (1)、(2) 等小问，请将它们合并为该大题整体，不要拆分成单独的行（因为智学网和老师批改通常打一个大题总分）；
+   - 每一条包含：
+     * label: 卷面位置及大题编号（如"一、选择题"、"二、填空题"、"三、解答题第17题"）
+     * fullScore: 该大题满分分值（正数）
+     * name: 题型或考查主要内容（如"1-10题"、"11-16题"、"有理数混合运算"、"整式化简求值"、"方程应用题"、"几何动点压轴"等）
+     * level: 初拟难度档位（仅限三选一："base" - 不该丢/基础题；"mid" - 讲过/中档题；"hard" - 压轴题）
+4. 难度档位初拟参考：
+   - 选择题、填空题、前1~2道基础计算大题通常为 "base"；
+   - 几何证明、方程应用、函数等常规大题通常为 "mid"；
+   - 全卷最后1~2道具有区分度的压轴大题通常为 "hard"。
+5. 勾稽校验：所有 sections 的 fullScore 相加，必须严格等于 totalScore。
+
+只返回标准 JSON，不要任何 Markdown 代码块或其他文字，格式如下：
+{
+  "title": "试卷名称",
+  "totalScore": 120,
+  "sections": [
+    { "label": "一、选择题", "fullScore": 30, "name": "1-10题", "level": "base" },
+    { "label": "二、填空题", "fullScore": 18, "name": "11-16题", "level": "base" },
+    { "label": "三、解答题第17题", "fullScore": 8, "name": "有理数混合运算", "level": "base" }
+  ]
+}`;
+
+        const { json } = await visionJSON({
+          system,
+          user: `请识别所附试卷照片，提取标题、全卷总分以及全部大题结构，确保各大题分值相加等于总分，返回 JSON。`,
+          images,
+          maxTokens: 4096,
+          budgetMs: 90000,
+        });
+
+        if (!json || typeof json !== "object") {
+          return res.status(502).json({ error: "AI 未能解析出合规的试卷结构，请确保图片清晰或手动录入" });
+        }
+
+        const title = String(json.title || "").trim();
+        const totalScore = Number(json.totalScore) || 0;
+        const sections = Array.isArray(json.sections) ? json.sections : [];
+
+        if (sections.length === 0) {
+          return res.status(502).json({ error: "未能识别出试卷中的大题结构，请重新拍摄清晰照片" });
+        }
+
+        return res.status(200).json({
+          ok: true,
+          paper: {
+            title,
+            totalScore,
+            sections: sections.map((s, idx) => ({
+              key: "s" + (idx + 1),
+              label: String(s.label || `第${idx + 1}大题`).trim(),
+              fullScore: Number(s.fullScore) || 0,
+              level: ["base", "mid", "hard"].includes(s.level) ? s.level : "base",
+              name: String(s.name || "").trim(),
+            })),
+          },
+        });
       }
 
       return res.status(400).json({ error: "不认识的 action" });

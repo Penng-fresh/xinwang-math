@@ -1,5 +1,8 @@
 // Vercel Serverless Function - AI 批改代理
-// 前端上传图片 → 后端调 DeepSeek → 返回批改结果
+// 前端上传图片 → 后端调 DeepSeek → 确定性验算 → 返回批改结果
+
+import { codeVerifyRationalSteps } from "./lib/rationalCheck.js";
+import { checkRateLimit } from "../lib/ratelimit.js";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1/chat/completions";
@@ -223,6 +226,12 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
+  // 轻量级防刷保护（1分钟内限15次，正常家长不受影响，遭遇异常流量自动拦截）
+  const rl = await checkRateLimit(req, "grade", 15, 60);
+  if (!rl.allowed) {
+    return res.status(429).json({ error: "当前提交过于频繁，请稍候几十秒再试" });
+  }
+
   if (!DEEPSEEK_API_KEY) {
     return res.status(500).json({ error: "服务器未配置 API Key，请联系彭老师" });
   }
@@ -232,6 +241,9 @@ export default async function handler(req, res) {
   const rawImage = body.imageBase64 || body.imageData || body.image || body.base64 || "";
   if (!rawImage) {
     return res.status(400).json({ error: "缺少图片数据" });
+  }
+  if (rawImage.length > 3_800_000) {
+    return res.status(413).json({ error: "图片过大，请在相册中选用常规尺寸或重新拍照" });
   }
   // 兼容前端已带 data:image/...;base64, 前缀的情况，避免重复拼接
   const mPrefix = String(rawImage).trim().match(/^data:([^;]+);base64,(.*)$/);
@@ -335,10 +347,14 @@ export default async function handler(req, res) {
     if (!text) {
       if (salvaged.length > 0) {
         // 抢救到几道算几道：至少让家长看到批改结果，而不是一句报错
-        const partial = JSON.stringify({ problems: salvaged });
+        let verifiedSalvaged = salvaged;
+        try {
+          verifiedSalvaged = codeVerifyRationalSteps(salvaged);
+        } catch (_) {}
+        const partial = JSON.stringify({ problems: verifiedSalvaged });
         return res.status(200).json({
           text: partial,
-          problems: salvaged,
+          problems: verifiedSalvaged,
           warning: `图片内容较多，AI 只批改完前 ${salvaged.length} 道。剩下的请把作业分成两张拍，每张 3~4 道题最稳。`
         });
       }
@@ -349,12 +365,17 @@ export default async function handler(req, res) {
     }
 
     const problems = parseResult(text);
-    const result = problems.problems || (Array.isArray(problems) ? problems : [problems]);
+    let result = problems.problems || (Array.isArray(problems) ? problems : [problems]);
+
+    // 接入确定性有理数验算引擎（秒级本地精确核对，杜绝 AI 幻觉与归因错误）
+    try {
+      result = codeVerifyRationalSteps(result);
+    } catch (verErr) {
+      console.error("[grade] codeVerifyRationalSteps 运行异常:", verErr?.message);
+    }
 
     // 线上前端读的是 text（JSON 字符串）；本地版读的是 problems 数组。两个都返回，兼容两边。
-    const s0 = text.indexOf("{");
-    const e0 = text.lastIndexOf("}");
-    const cleanText = s0 >= 0 && e0 > s0 ? text.slice(s0, e0 + 1) : text;
+    const cleanText = JSON.stringify({ problems: result });
 
     return res.status(200).json({ text: cleanText, problems: result });
 

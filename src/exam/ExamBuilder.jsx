@@ -10,7 +10,7 @@
 // 一个硬校验：各大题满分加起来必须等于卷子总分。对不上就不让保存，
 // 因为后面每份答卷的「得分之和 = 总分」校验全靠这个总分。
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
 const C = {
   dark: "#2a2218",
@@ -86,6 +86,40 @@ const S = {
 let rowSeq = 100;
 const newRow = () => ({ key: "s" + ++rowSeq, label: "", fullScore: "", level: "base", name: "" });
 
+function compressPaperImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("读取文件失败"));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("图片解析失败"));
+      img.onload = () => {
+        const MAX = 1600; // 试卷小字多，1600px 保证清晰度
+        let w = img.width, h = img.height;
+        if (w > MAX || h > MAX) {
+          if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+          else { w = Math.round(w * MAX / h); h = MAX; }
+        }
+        const cv = document.createElement("canvas");
+        cv.width = w; cv.height = h;
+        cv.getContext("2d").drawImage(img, 0, 0, w, h);
+        cv.toBlob((blob) => {
+          if (!blob) return reject(new Error("压缩失败"));
+          const r2 = new FileReader();
+          r2.onload = (e2) => {
+            const full = e2.target.result;
+            resolve({ data: full.split(",")[1], mediaType: "image/jpeg" });
+          };
+          r2.onerror = () => reject(new Error("读取失败"));
+          r2.readAsDataURL(blob);
+        }, "image/jpeg", 0.85);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function ExamBuilder({ password }) {
   const [groups, setGroups] = useState([]);
   const [gid, setGid] = useState("");
@@ -97,6 +131,9 @@ export default function ExamBuilder({ password }) {
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
 
+  const [parsingPhoto, setParsingPhoto] = useState(false);
+  const photoInputRef = useRef(null);
+
   // 新建表单
   const [newName, setNewName] = useState("");
   const [newDate, setNewDate] = useState("");
@@ -105,6 +142,61 @@ export default function ExamBuilder({ password }) {
   const [paperTitle, setPaperTitle] = useState("");
   const [totalScore, setTotalScore] = useState("");
   const [rows, setRows] = useState([newRow()]);
+
+  async function handlePhotoUpload(evt) {
+    const files = Array.from(evt.target.files || []);
+    if (files.length === 0) return;
+    if (files.length > 6) {
+      setErr("一次最多选择 6 张试卷图片");
+      return;
+    }
+    setErr("");
+    setMsg("正在压缩试卷图片并上传，请稍候...");
+    setParsingPhoto(true);
+
+    try {
+      const compressedList = [];
+      for (let i = 0; i < files.length; i++) {
+        setMsg(`正在处理第 ${i + 1}/${files.length} 张试卷照片...`);
+        const c = await compressPaperImage(files[i]);
+        compressedList.push(c);
+      }
+
+      setMsg("AI 正在深度识别试卷标题、满分与各大题结构（约 10~15 秒），请稍候...");
+      const d = await post({
+        action: "parsePaperImages",
+        images: compressedList,
+      });
+
+      if (!d.ok) {
+        setErr("AI 试卷识别失败：" + (d.error || "未知原因"));
+        return;
+      }
+
+      const p = d.paper;
+      if (p.title) setPaperTitle(p.title);
+      if (p.totalScore) setTotalScore(String(p.totalScore));
+      if (Array.isArray(p.sections) && p.sections.length > 0) {
+        setRows(
+          p.sections.map((s) => ({
+            key: "c" + ++rowSeq,
+            label: s.label || "",
+            fullScore: String(s.fullScore || ""),
+            level: s.level || "base",
+            name: s.name || "",
+          }))
+        );
+        setMsg(`已成功识别出 ${p.sections.length} 道大题（总分 ${p.totalScore || 0} 分）！请核对各大题满分，确认无误后点击下方「保存卷子结构」。`);
+      } else {
+        setErr("AI 未能在试卷照片中找到明确的大题结构，请手动录入或重新拍摄。");
+      }
+    } catch (e) {
+      setErr("识别过程出错：" + (e.message || "网络异常"));
+    } finally {
+      setParsingPhoto(false);
+      if (evt.target) evt.target.value = "";
+    }
+  }
 
   async function get(qs) {
     const r = await fetch("/api/exams?" + qs + "&password=" + encodeURIComponent(password));
@@ -304,7 +396,35 @@ export default function ExamBuilder({ password }) {
               {totalScore !== "" && !sumOk && <span style={{ color: C.danger }}>　≠ 总分 {totalNum || 0}，先改到一致</span>}
               {sumOk && <span style={{ color: C.good }}>　与总分一致 ✓</span>}
             </div>
-            <button onClick={copyPrev} style={{ ...S.btnGhost, padding: "6px 12px", fontSize: 12 }}>从上一场复制</button>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handlePhotoUpload}
+                style={{ display: "none" }}
+              />
+              <button
+                onClick={() => photoInputRef.current?.click()}
+                disabled={parsingPhoto || busy}
+                style={{
+                  ...S.btn,
+                  background: C.accent,
+                  color: "#fff",
+                  padding: "6px 13px",
+                  fontSize: 12,
+                  cursor: (parsingPhoto || busy) ? "default" : "pointer",
+                  opacity: parsingPhoto ? 0.7 : 1,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                {parsingPhoto ? "⏳ 正在识别试卷…" : "📸 传试卷照片自动拆题"}
+              </button>
+              <button onClick={copyPrev} disabled={parsingPhoto || busy} style={{ ...S.btnGhost, padding: "6px 12px", fontSize: 12 }}>从上一场复制</button>
+            </div>
           </div>
 
           <div style={{ fontSize: 11.5, color: C.dim, lineHeight: 1.7, marginBottom: 10 }}>{LEVEL_HINT}</div>
