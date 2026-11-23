@@ -1,5 +1,6 @@
 {
   "functions": {
-    "api/grade.js": { "maxDuration": 300 }
+    "api/grade.js": { "maxDuration": 300 },
+    "api/paper.js": { "maxDuration": 300 }
   }
 }
