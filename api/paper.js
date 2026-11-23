@@ -7,7 +7,7 @@
 // 482 个公式零丢失；AI 切题要几十秒还要花钱还可能漏题。规则能做的不该交给模型。
 // 只有在题号格式异常（切不出题、题号大段断档）时，才返回 needsAIFallback 让上层决定。
 
-import { parseDocx } from "./lib/docx.js";
+import { parseDocx } from "../lib/docx.js";
 import { textJSON, aiConfigured } from "../lib/ai.js";
 import { checkRateLimit } from "../lib/ratelimit.js";
 import { guardTeacher } from "../lib/auth.js";
