@@ -1,12 +1,9 @@
 // Vercel Serverless Function - AI 批改代理
-// 前端上传图片 → 后端调 DeepSeek → 确定性验算 → 返回批改结果
+// 前端上传图片 → 后端经统一网关调 Gemini（支持热切 DeepSeek）→ 确定性验算 → 返回批改结果
 
 import { codeVerifyRationalSteps } from "./lib/rationalCheck.js";
 import { checkRateLimit } from "../lib/ratelimit.js";
-
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
-const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1/chat/completions";
-const DEEPSEEK_MODEL = "deepseek-flash";
+import { getAIConfig, extractAIErrorMessage } from "../lib/ai.js";
 
 const SYSTEM_PROMPT = `你是一位严格但耐心的初中数学老师，能检查所有类型计算题的解题过程。
 
@@ -232,7 +229,8 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: "当前提交过于频繁，请稍候几十秒再试" });
   }
 
-  if (!DEEPSEEK_API_KEY) {
+  const ai = getAIConfig();
+  if (!ai.key) {
     return res.status(500).json({ error: "服务器未配置 API Key，请联系彭老师" });
   }
 
@@ -252,9 +250,8 @@ export default async function handler(req, res) {
 
   try {
     // ── 为什么要重试 ──
-    // deepseek-flash 是推理模型，思考过程也算在 max_tokens 里。题目多、字迹乱的时候，
-    // 思考能把整个配额吃光，导致 content 为空（前端就报"未返回有效内容"），
-    // 或者只吐半截 JSON。同样的图重试一次往往就能出完整结果，所以要重试。
+    // Gemini / DeepSeek 推理模型的思考过程也会计入 max_tokens。题目多、字迹乱的时候，
+    // 思考可能把配额吃满，导致 content 为空或只吐半截 JSON。同样的图重试一次往往能出完整结果。
     // 同时受 Vercel 函数时限约束，第一轮耗时过长就不再重试，避免直接超时。
     const START = Date.now();
     const MAX_ATTEMPTS = 2;
@@ -278,15 +275,15 @@ export default async function handler(req, res) {
       const timer = setTimeout(() => ctl.abort(), budget);
       let data;
       try {
-        const response = await fetch(DEEPSEEK_BASE_URL, {
+        const response = await fetch(ai.baseUrl, {
           method: "POST",
           signal: ctl.signal,
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${DEEPSEEK_API_KEY}`,
+            "Authorization": `Bearer ${ai.key}`,
           },
           body: JSON.stringify({
-            model: DEEPSEEK_MODEL,
+            model: ai.model,
             max_tokens: 32768,
             temperature: attempt === 1 ? 0.1 : 0.35,
             messages: [
@@ -305,17 +302,23 @@ export default async function handler(req, res) {
         });
 
         if (!response.ok) {
-          const errData = await response.json().catch(() => ({}));
+          const errRaw = await response.text().catch(() => "");
+          const errMsg = extractAIErrorMessage(errRaw, response.statusText);
           if (response.status === 429) {
             return res.status(429).json({ error: "AI 服务暂时繁忙，请稍后重试" });
           }
-          return res.status(502).json({ error: "AI 服务异常: " + (errData?.error?.message || response.statusText) });
+          if (response.status >= 500 && attempt < MAX_ATTEMPTS) {
+            lastFinish = `http_${response.status}`;
+            console.error(`[grade:${ai.provider}/${ai.model}] attempt ${attempt} HTTP ${response.status}: ${errMsg}`);
+            continue;
+          }
+          return res.status(502).json({ error: "AI 服务异常: " + errMsg });
         }
 
         data = await response.json();
       } catch (err) {
         lastFinish = err?.name === "AbortError" ? "client_timeout" : "fetch_error";
-        console.error("[grade] attempt", attempt, "请求异常:", err?.message);
+        console.error(`[grade:${ai.provider}/${ai.model}] attempt ${attempt} 请求异常:`, err?.message);
         continue;
       } finally {
         clearTimeout(timer);
@@ -338,7 +341,7 @@ export default async function handler(req, res) {
       }
 
       console.error(
-        `[grade] attempt ${attempt} 未完成 finish=${lastFinish}` +
+        `[grade:${ai.provider}/${ai.model}] attempt ${attempt} 未完成 finish=${lastFinish}` +
         ` reasoning=${lastUsage?.completion_tokens_details?.reasoning_tokens ?? "-"}` +
         ` contentLen=${lastText.length} salvaged=${salvaged.length}`
       );
